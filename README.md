@@ -41,17 +41,19 @@ try (var timeLash = new TimeLash<>(
 ```
 
 Artifacts 
+-----------
 
 Lasher is available on Maven Central, hence just add the following dependency:
-```
+```xml
 <dependency>
     <groupId>net.soundvibe</groupId>
     <artifactId>lasher</artifactId>
     <version>0.0.1</version>
 </dependency>
 ```
+
 Scala SBT
-```
+```scala
 libraryDependencies += "net.soundvibe" % "lasher" % "0.0.1"
 ```
 
