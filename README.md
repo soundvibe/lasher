@@ -9,12 +9,12 @@ Lasher is an embeddable key-value store written in Java.
 What is Lasher?
 -------------------
 Lasher is very lightweight (has no dependencies) embeddable persistent key-value store with very fast performance. 
-Lasher incrementally rehashes stripes when needed, avoiding full table rehash which is typical for standard hash tables.
-This helps to sustain high performance even when the number of elements in the table is very large.  
+Lasher uses [linear hashing](https://en.wikipedia.org/wiki/Linear_hashing) when table reaches given load factor, avoiding full table rehash which is typical for standard hash tables.
+This helps to sustain high performance even when the number of elements in the table is growing and is very large.  
 
 It is possible to store millions of elements in Lasher and use very little memory because all the data is persisted into memory mapped files.
 
-Lasher could be used instead of any regular in-memory hashmap without any performance decrease. 
+Lasher could be used instead of any regular in-memory hashmap without sacrificing performance. 
 It is even faster than `ConcurrentHasMap<K,V>` in our benchmarks and uses much less memory. 
 
 Lasher stores consist of 2 binary files - index and data.
