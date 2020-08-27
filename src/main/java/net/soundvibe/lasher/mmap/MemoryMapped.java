@@ -14,12 +14,11 @@ import static net.soundvibe.lasher.util.BytesSupport.BYTE_ORDER;
 
 public abstract class MemoryMapped implements Closeable {
 
-    private static final int CHUNK_SIZE = 256 * 1024 * 1024; //256 MB
+    private static final int CHUNK_SIZE = 128 * 1024 * 1024; //128 MB
     private final FileType fileType;
     protected MappedByteBuffer[] buffers;
     protected long size;
     private final Path baseDir;
-    private final long defaultLength;
 
     private static final Class<?> UNSAFE_CLASS = resolveUnsafeClass();
     private static final Unsafe UNSAFE = resolveUnsafe();
@@ -29,10 +28,10 @@ public abstract class MemoryMapped implements Closeable {
         Objects.requireNonNull(baseDir, "baseDir is null");
         this.fileType = fileType;
         this.baseDir = baseDir;
-        this.defaultLength = roundTo4096(defaultLength);
+        final long length = Math.max(CHUNK_SIZE, roundTo4096(defaultLength));
 
-        var fileStats = readFileStats(baseDir, fileType, this.defaultLength);
-        this.size = Math.max(this.defaultLength, fileStats.totalSize);
+        var fileStats = readFileStats(baseDir, fileType, length);
+        this.size = Math.max(length, fileStats.totalSize);
         this.buffers = fileStats.buffers;
         if (fileStats.buffers.length == 0) {
             mapAndResize(this.size);
@@ -69,9 +68,7 @@ public abstract class MemoryMapped implements Closeable {
                 var totalBuffers = new MappedByteBuffer[totalBuffersSize];
                 int index = 0;
                 for (long i = 0; i < fileSize; i+=CHUNK_SIZE) {
-                    var remaining = fileSize - i;
-                    var bufferSize = remaining < CHUNK_SIZE ? remaining : CHUNK_SIZE;
-                    totalBuffers[index] = fc.map(FileChannel.MapMode.READ_WRITE, i, bufferSize);
+                    totalBuffers[index] = fc.map(FileChannel.MapMode.READ_WRITE, i, CHUNK_SIZE);
                     totalBuffers[index].order(BYTE_ORDER);
                     index++;
                 }
@@ -167,10 +164,6 @@ public abstract class MemoryMapped implements Closeable {
     private void mapAndResize(long newSize) {
         var bufferIndex = findBufferIndex(newSize);
         expandBuffers(bufferIndex, newSize);
-        resizeOlderBuffersIfNeeded(bufferIndex);
-
-        long sizeToSet = bufferIndex == 0 ? newSize : resolveSize(newSize, bufferIndex);
-        buffers[bufferIndex] = mapBuffer(bufferIndex, (int)sizeToSet, newSize);
     }
 
     private MappedByteBuffer mapBuffer(int bufferIndex, int bufferSize, long fileSize) {
@@ -201,45 +194,6 @@ public abstract class MemoryMapped implements Closeable {
         return result;
     }
 
-    private void resizeOlderBuffersIfNeeded(int bufferIndex) {
-        if (bufferIndex > 0) {
-            for (int i = 0; i < bufferIndex; i++) {
-                if (buffers[i] == null || buffers[i].capacity() < CHUNK_SIZE) {
-                    remapTo(i, CHUNK_SIZE);
-                }
-            }
-        }
-    }
-
-    private void remapTo(int bufferIndex, long newSize) {
-        unmap(buffers[bufferIndex]);
-        try {
-            try (var f = new RandomAccessFile(baseDir.resolve(fileType.filename).toFile(), "rw");
-                 var fc = f.getChannel()) {
-                var pos = resolveBufferPos(bufferIndex);
-                buffers[bufferIndex] = fc.map(FileChannel.MapMode.READ_WRITE, pos, newSize);
-                buffers[bufferIndex].order(BYTE_ORDER);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    private long resolveSize(long size, int bufferIndex) {
-        long newSize = size;
-        for (int i = 0; i < bufferIndex - 1; i++) {
-            if (buffers[i] != null) {
-                newSize -= buffers[i].capacity();
-            }
-        }
-
-        if (newSize < defaultLength) {
-            return defaultLength;
-        }
-
-        return Math.min(CHUNK_SIZE, newSize);
-    }
-
     protected int convertPos(long absolutePos, int bufferIndex) {
         long startPos = (long) CHUNK_SIZE * (long) bufferIndex;
         int bufferPos = (int) (absolutePos - startPos);
@@ -265,7 +219,7 @@ public abstract class MemoryMapped implements Closeable {
         if (newPartition + 1 > buffers.length) {
             int oldLength = buffers.length;
             buffers = Arrays.copyOf(buffers, newPartition + 1);
-            for (int i = oldLength; i < buffers.length - 1; i++) {
+            for (int i = oldLength; i < buffers.length; i++) {
                 unmap(buffers[i]);
                 buffers[i] = mapBuffer(i, CHUNK_SIZE, newSize);
             }

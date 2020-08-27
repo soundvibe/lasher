@@ -64,34 +64,11 @@ class LasherTest {
 
     @Test
     void should_rehash(@TempDir Path tmpPath) {
-        long fileSize = (long) Math.pow(2, 10L);
-        long lastIdx = 0L;
-        try (var sut = new Lasher(tmpPath, fileSize, fileSize)) {
-            assertEquals(0L, sut.rehashIndex.get());
-
-            for (long i = 0; i < 800; i++) {
-                lastIdx = i;
-                sut.put(BytesSupport.longToBytes(i), BytesSupport.longToBytes(i + 1));
-            }
-
-            assertNotEquals(0L, sut.rehashIndex.get());
-
-            for (long i = 0; i < 800; i++) {
-                assertArrayEquals(BytesSupport.longToBytes(i + 1),sut.get(BytesSupport.longToBytes(i)));
-            }
-        } catch (Exception e) {
-            System.out.println("Last index: " + lastIdx);
-            throw e;
-        }
-    }
-
-    @Test
-    void should_rehash_overlapping(@TempDir Path tmpPath) {
         long fileSize = (long) Math.pow(2, 8L);
         try (var sut = new Lasher(tmpPath, fileSize, fileSize)) {
             assertEquals(0L, sut.rehashIndex.get());
-            long count = 100_000;
-            var bytes = new byte[19011];
+            long count = 15_000_000;
+            var bytes = new byte[32];
             Arrays.fill(bytes, (byte)1);
 
             for (long i = 0; i < count; i++) {
@@ -110,8 +87,8 @@ class LasherTest {
     @Test
     void should_read_from_store(@TempDir Path tmpPath) {
         long fileSize = (long) Math.pow(2, 8L);
-        long count = 100_000;
-        var bytes = new byte[19011];
+        long count = 15_000_000;
+        var bytes = new byte[24];
         Arrays.fill(bytes, (byte)1);
         try (var sut = new Lasher(tmpPath, fileSize, fileSize)) {
             assertEquals(0L, sut.rehashIndex.get());
