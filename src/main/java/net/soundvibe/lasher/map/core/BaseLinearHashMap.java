@@ -219,7 +219,6 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
         writeHeader();
         index.close();
         data.close();
-        System.gc();
     }
 
     public void delete() {
