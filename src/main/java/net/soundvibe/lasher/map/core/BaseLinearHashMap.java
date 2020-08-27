@@ -122,9 +122,6 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
             int stripeToRehash;
             while (true) {
                 stripeToRehash = rehashIndex.getAndIncrement();
-                if (stripeToRehash == 0) {
-                    index.doubleGrow();
-                }
                 //If it's in the valid table range, we conceptually acquired a valid ticket
                 if (stripeToRehash < STRIPES) break;
                 //Otherwise we're in the middle of a reset - spin until it has completed.
@@ -135,6 +132,9 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
             }
             //We now have a valid ticket - we rehash all the indexes in the given stripe
             synchronized (locks[stripeToRehash]) {
+                if (stripeToRehash == 0) {
+                    index.doubleGrow();
+                }
                 for (long idx = stripeToRehash; idx < tableLength; idx += STRIPES) {
                     rehashIdx(idx);
                 }
