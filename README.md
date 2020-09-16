@@ -48,13 +48,13 @@ Lasher is available on Maven Central, hence just add the following dependency:
 <dependency>
     <groupId>net.soundvibe</groupId>
     <artifactId>lasher</artifactId>
-    <version>0.0.2</version>
+    <version>0.0.3</version>
 </dependency>
 ```
 
 Scala SBT
 ```scala
-libraryDependencies += "net.soundvibe" % "lasher" % "0.0.2"
+libraryDependencies += "net.soundvibe" % "lasher" % "0.0.3"
 ```
 
 Contributions

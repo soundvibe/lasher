@@ -6,7 +6,7 @@
 
     <groupId>net.soundvibe</groupId>
     <artifactId>lasher</artifactId>
-    <version>0.0.2</version>
+    <version>0.0.3</version>
     <packaging>jar</packaging>
     <name>lasher</name>
     <description>Embeddable persistent key-value store</description>

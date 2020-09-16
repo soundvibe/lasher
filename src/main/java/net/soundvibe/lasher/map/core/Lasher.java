@@ -34,9 +34,8 @@ public class Lasher extends BaseLinearHashMap {
         requireNonNull(key, "key cannot be null");
         final long hash = Hash.murmurHash(key);
         synchronized (lockForHash(hash)) {
-            final long idx = idxForHash(hash);
-            final long pos = idxToPos(idx);
-            final long adr = index.getDataAddress(pos);
+            final long indexPos = indexPos(hash);
+            final long adr = index.getDataAddress(indexPos);
             if (adr == 0L) return null;
 
             var record = readDataRecord(adr);
@@ -51,7 +50,6 @@ public class Lasher extends BaseLinearHashMap {
         }
     }
 
-    //This is the primary use case for a r/w lock
     public byte[] putIfAbsent(byte[] key, byte[] value) {
         requireNonNull(key, "key cannot be null");
         requireNonNull(value, "value cannot be null");
@@ -60,15 +58,10 @@ public class Lasher extends BaseLinearHashMap {
         final long hash = Hash.murmurHash(key);
 
         synchronized (lockForHash(hash)) {
-            final long idx = idxForHash(hash);
-            final long pos = idxToPos(idx);
-            final long adr = index.getDataAddress(pos);
-            long nextPos = 0L;
+            final long indexPos = indexPos(hash);
+            final long adr = index.getDataAddress(indexPos);
             if (adr == 0L) {
-                final long insertPos = allocateNewRecord(key, value);
-                data.writeRecord(key, value, insertPos, nextPos);
-                index.putDataAddress(pos, insertPos);
-                size.incrementAndGet();
+                insertNewRecord(indexPos, key, value);
                 return null;
             }
             var bucket = readDataRecord(adr);
@@ -78,10 +71,7 @@ public class Lasher extends BaseLinearHashMap {
                 } else if (bucket.getNextRecordPos() != 0L) {
                     bucket = readDataRecord(bucket.getNextRecordPos());
                 } else {
-                    final long insertPos = allocateNewRecord(key, value);
-                    data.writeRecord(key, value, insertPos, nextPos);
-                    bucket.setNextRecordPos(insertPos, data);
-                    size.incrementAndGet();
+                    insertNewRecordInChain(0L, bucket.pos, key, value);
                     return null;
                 }
             }
@@ -96,41 +86,28 @@ public class Lasher extends BaseLinearHashMap {
         }
 
         final long hash = Hash.murmurHash(key);
-        final long insertPos = allocateNewRecord(key, value);
-
         synchronized (lockForHash(hash)) {
-            final long idx = idxForHash(hash);
-            final long pos = idxToPos(idx);
-            if (pos >= index.size()) {
-                throw new IndexOutOfBoundsException("Pos: " + pos + " index size: " + index.size());
+            final long indexPos = indexPos(hash);
+            if (indexPos >= index.size()) {
+                throw new IndexOutOfBoundsException("Pos: " + indexPos + " index size: " + index.size());
             }
-            final long adr = index.getDataAddress(pos);
-            long nextPos = 0L;
+            final long adr = index.getDataAddress(indexPos);
             if (adr == 0L) {
-                data.writeRecord(key, value, insertPos, nextPos);
-                index.putDataAddress(pos, insertPos);
-                size.incrementAndGet();
+                insertNewRecord(indexPos, key, value);
                 return null;
             }
             var bucket = readDataRecord(adr);
             RecordNode prev = null;
             while (true) {
-                nextPos = bucket.getNextRecordPos();
+                long nextPos = bucket.getNextRecordPos();
                 if (bucket.keyEquals(key)) {
-                    data.writeRecord(key, value, insertPos, nextPos);
-                    if (prev == null) {
-                        index.putDataAddress(pos, insertPos);
-                    } else {
-                        prev.setNextRecordPos(insertPos, data);
-                    }
+                    updateRecord(indexPos, nextPos, key, value, prev);
                     return bucket.val;
                 } else if (nextPos != 0L) {
                     prev = bucket;
                     bucket = readDataRecord(nextPos);
                 } else {
-                    data.writeRecord(key, value, insertPos, nextPos);
-                    bucket.setNextRecordPos(insertPos, data);
-                    size.incrementAndGet();
+                    insertNewRecordInChain(nextPos, bucket.pos, key, value);
                     return null;
                 }
             }
@@ -142,21 +119,15 @@ public class Lasher extends BaseLinearHashMap {
         final long hash = Hash.murmurHash(key);
 
         synchronized (lockForHash(hash)) {
-            final long idx = idxForHash(hash);
-            final long pos = idxToPos(idx);
-            final long adr = index.getDataAddress(pos);
+            final long indexPos = indexPos(hash);
+            final long adr = index.getDataAddress(indexPos);
             if (adr == 0L) return null;
 
             var bucket = readDataRecord(adr);
             RecordNode prev = null;
             while (true) {
                 if (bucket.keyEquals(key)) {
-                    if (prev == null) {
-                        index.putDataAddress(pos, bucket.getNextRecordPos());
-                    } else {
-                        prev.setNextRecordPos(bucket.getNextRecordPos(), data);
-                    }
-                    size.decrementAndGet();
+                    removeRecord(indexPos, bucket.getNextRecordPos(), prev);
                     return bucket.val;
                 } else if (bucket.getNextRecordPos() != 0L) {
                     prev = bucket;
@@ -174,22 +145,15 @@ public class Lasher extends BaseLinearHashMap {
         final long hash = Hash.murmurHash(key);
 
         synchronized (lockForHash(hash)) {
-            final long idx = idxForHash(hash);
-            final long pos = idxToPos(idx);
-            final long adr = index.getDataAddress(pos);
+            final long indexPos = indexPos(hash);
+            final long adr = index.getDataAddress(indexPos);
             if (adr == 0L) return false;
 
             var bucket = readDataRecord(adr);
             RecordNode prev = null;
             while (true) {
                 if (bucket.keyValueEquals(key, value)) {
-                    if (prev == null) {
-                        index.putDataAddress(pos, bucket.getNextRecordPos());
-                    }
-                    else {
-                        prev.setNextRecordPos(bucket.getNextRecordPos());
-                    }
-                    size.decrementAndGet();
+                    removeRecord(indexPos, bucket.getNextRecordPos(), prev);
                     return true;
                 } else if (bucket.getNextRecordPos() != 0L) {
                     prev = bucket;
@@ -207,23 +171,15 @@ public class Lasher extends BaseLinearHashMap {
         final long hash = Hash.murmurHash(key);
 
         synchronized (lockForHash(hash)) {
-            final long idx = idxForHash(hash);
-            final long pos = idxToPos(idx);
-
-            final long adr = index.getDataAddress(pos);
+            final long indexPos = indexPos(hash);
+            final long adr = index.getDataAddress(indexPos);
             if (adr == 0L) return false;
 
             var bucket = readDataRecord(adr);
             RecordNode prev = null;
             while (true) {
                 if (bucket.keyValueEquals(key, prevVal)) {
-                    final long insertPos = allocateNewRecord(key, newVal);
-                    data.writeRecord(key, newVal, insertPos, bucket.getNextRecordPos());
-                    if (prev == null) {
-                        index.putDataAddress(pos, insertPos);
-                    } else {
-                        prev.setNextRecordPos(insertPos, data);
-                    }
+                    updateRecord(indexPos, bucket.getNextRecordPos(), key, newVal, prev);
                     return true;
                 } else if (bucket.getNextRecordPos() != 0L) {
                     prev = bucket;
@@ -242,23 +198,15 @@ public class Lasher extends BaseLinearHashMap {
         final long hash = Hash.murmurHash(key);
 
         synchronized (lockForHash(hash)) {
-            final long idx = idxForHash(hash);
-            final long pos = idxToPos(idx);
-
-            final long adr = index.getDataAddress(pos);
+            final long indexPos = indexPos(hash);
+            final long adr = index.getDataAddress(indexPos);
             if (adr == 0L) return null;
 
             var bucket = readDataRecord(adr);
             RecordNode prev = null;
             while (true) {
                 if (bucket.keyEquals(key)) {
-                    final long insertPos = allocateNewRecord(key, value);
-                    data.writeRecord(key, value, insertPos, bucket.getNextRecordPos());
-                    if (prev == null) {
-                        index.putDataAddress(pos, insertPos);
-                    } else {
-                        prev.setNextRecordPos(insertPos, data);
-                    }
+                    updateRecord(indexPos, bucket.getNextRecordPos(),  key, value, prev);
                     return bucket.val;
                 } else if (bucket.getNextRecordPos() != 0L) {
                     prev = bucket;
@@ -287,8 +235,45 @@ public class Lasher extends BaseLinearHashMap {
         }
     }
 
+    private void insertNewRecord(long indexPos, byte[] key, byte[] value) {
+        final long insertPos = allocateNewRecord(key, value);
+        data.writeRecord(key, value, insertPos, 0L);
+        index.putDataAddress(indexPos, insertPos);
+        size.incrementAndGet();
+    }
+
+    private void insertNewRecordInChain(long nextRecordPos, long prevPos, byte[] key, byte[] value) {
+        final long insertPos = allocateNewRecord(key, value);
+        data.writeRecord(key, value, insertPos, nextRecordPos);
+        data.writeNextRecordPos(prevPos, insertPos);
+        size.incrementAndGet();
+    }
+
+    private void updateRecord(long indexPos, long nextRecordPos, byte[] key, byte[] value, RecordNode prevRecordNode) {
+        final long insertPos = allocateNewRecord(key, value);
+        data.writeRecord(key, value, insertPos, nextRecordPos);
+        if (prevRecordNode == null) {
+            index.putDataAddress(indexPos, insertPos);
+        } else {
+            data.writeNextRecordPos(prevRecordNode.pos, insertPos);
+        }
+    }
+
+    private void removeRecord(long indexPos, long nextRecordPos, RecordNode prevRecordNode) {
+        if (prevRecordNode == null) {
+            index.putDataAddress(indexPos, nextRecordPos);
+        } else {
+            data.writeNextRecordPos(prevRecordNode.pos, nextRecordPos);
+        }
+        size.decrementAndGet();
+    }
+
     protected long idxToPos(long idx) {
         return idx * INDEX_REC_SIZE;
+    }
+
+    protected long indexPos(long hash) {
+        return idxToPos(idxForHash(hash));
     }
 
     protected RecordNode readDataRecord(long pos) {
