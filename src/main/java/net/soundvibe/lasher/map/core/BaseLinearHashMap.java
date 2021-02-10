@@ -35,13 +35,13 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 
     private static final class Lock {}
 
-    public BaseLinearHashMap(Path baseDir, long indexFileLength, long dataFileLength) {
+    protected BaseLinearHashMap(Path baseDir, long indexFileLength, long dataFileLength) {
         this.baseDir = baseDir;
         this.defaultFileLength = nextPowerOf2(dataFileLength);
         for (int i = 0; i < STRIPES; i++) locks[i] = new Lock();
         baseDir.toFile().mkdirs();
-        index = new IndexNode(baseDir, nextPowerOf2(indexFileLength));
-        data = new DataNode(baseDir, this.defaultFileLength);
+        this.index = new IndexNode(baseDir, nextPowerOf2(indexFileLength));
+        this.data = new DataNode(baseDir, this.defaultFileLength);
         readHeader();
     }
 

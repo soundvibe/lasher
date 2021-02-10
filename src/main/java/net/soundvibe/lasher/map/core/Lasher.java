@@ -339,10 +339,10 @@ public class Lasher extends BaseLinearHashMap {
         if (buckets.isEmpty()) return 0L;
         for (int i = 0; i < buckets.size() - 1; i++) {
             buckets.get(i)
-                    .setNextRecordPos(buckets.get(i + 1).pos, data);
+                    .writeAndSetNextRecordPos(buckets.get(i + 1).pos, data);
         }
         buckets.get(buckets.size() - 1)
-                .setNextRecordPos(0L, data);
+                .writeAndSetNextRecordPos(0L, data);
         return buckets.get(0).pos;
     }
 

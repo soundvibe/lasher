@@ -166,14 +166,8 @@ public abstract class MemoryMapped implements Closeable {
         expandBuffers(bufferIndex, newSize);
     }
 
-    private MappedByteBuffer mapBuffer(int bufferIndex, int bufferSize, long fileSize) {
-        try (var f = new RandomAccessFile(baseDir.resolve(fileType.filename).toFile(), "rw");
-             var fc = f.getChannel()) {
-            if (f.length() < fileSize) {
-                f.setLength(fileSize);
-                this.size = fileSize;
-            }
-
+    private MappedByteBuffer mapBuffer(FileChannel fc, int bufferIndex, int bufferSize) {
+        try {
             var pos = resolveBufferPos(bufferIndex);
             var buffer = fc.map(FileChannel.MapMode.READ_WRITE, pos, bufferSize);
             buffer.order(BYTE_ORDER);
@@ -219,9 +213,19 @@ public abstract class MemoryMapped implements Closeable {
         if (newPartition + 1 > buffers.length) {
             int oldLength = buffers.length;
             buffers = Arrays.copyOf(buffers, newPartition + 1);
-            for (int i = oldLength; i < buffers.length; i++) {
-                unmap(buffers[i]);
-                buffers[i] = mapBuffer(i, CHUNK_SIZE, newSize);
+            try (var f = new RandomAccessFile(baseDir.resolve(fileType.filename).toFile(), "rw");
+                 var fc = f.getChannel()) {
+                if (f.length() < newSize) {
+                    f.setLength(newSize);
+                    this.size = newSize;
+                }
+
+                for (int i = oldLength; i < buffers.length; i++) {
+                    unmap(buffers[i]);
+                    buffers[i] = mapBuffer(fc, i, CHUNK_SIZE);
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
             }
         }
     }
