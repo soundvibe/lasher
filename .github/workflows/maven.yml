@@ -16,3 +16,8 @@ jobs:
         with:
           java-version: ${{ matrix.java }}
       - run: mvn --batch-mode clean test
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v1.2.1
+        with:
+          file: ./target/site/jacoco/jacoco.xml
+          flags: unittests  
