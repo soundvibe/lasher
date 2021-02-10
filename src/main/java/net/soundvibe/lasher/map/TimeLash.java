@@ -63,12 +63,12 @@ public class TimeLash<K,V> implements AutoCloseable, Iterable<Map.Entry<K,V>> {
      * @return the previous value associated with key, or null if there was no mapping for key.
      */
     public V put(K key, V value, long timestamp) {
-        var maxTime = watermark.updateAndGet(prev -> Math.max(prev, timestamp));
-        long idx = idxFromTimestamp(timestamp);
-        var map = buckets.compute(idx, (k, oldMap) -> {
+        var maxBucketTime = watermark.updateAndGet(prev -> Math.max(prev, idxFromTimestamp(timestamp)));
+        long bucketTimestampStart = idxFromTimestamp(timestamp);
+        var map = buckets.compute(bucketTimestampStart, (k, oldMap) -> {
             if (oldMap != null) return oldMap;
-            if (bucketInRange(idx, maxTime)) {
-                return createNewMap(idx);
+            if (bucketInRange(bucketTimestampStart, maxBucketTime)) {
+                return createNewMap(bucketTimestampStart);
             }
             return null;
         });
@@ -79,7 +79,7 @@ public class TimeLash<K,V> implements AutoCloseable, Iterable<Map.Entry<K,V>> {
         if (map.isEmpty()) {
             //check for expired entries
             var expiredEntries = buckets.entrySet().stream()
-                    .filter(not(e -> bucketInRange(e.getKey(), maxTime)))
+                    .filter(not(e -> bucketInRange(e.getKey(), maxBucketTime)))
                     .collect(toList());
 
             expiredEntries.forEach(e -> {
@@ -135,7 +135,13 @@ public class TimeLash<K,V> implements AutoCloseable, Iterable<Map.Entry<K,V>> {
     }
 
     private boolean bucketInRange(long bucket, long maxWatermark) {
-        return (maxWatermark - bucket) <= retentionSecs;
+        // retention 6 hours
+        // e.g. 6 hour bucket size
+        // max = 06:10 -> [06:00,12:00)
+        // new item 17:59 -> [12:00,18:00), max = 12:00
+        // allowedStart = max - retention = 12:00 - 6h -> 06:00
+        var allowedStart = maxWatermark - retentionSecs;
+        return bucket >= allowedStart;
     }
 
     private LasherMap<K,V> createNewMap(long bucket) {
