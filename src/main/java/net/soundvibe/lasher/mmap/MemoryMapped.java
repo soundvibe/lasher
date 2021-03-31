@@ -9,6 +9,8 @@ import java.nio.*;
 import java.nio.channels.FileChannel;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static net.soundvibe.lasher.util.BytesSupport.BYTE_ORDER;
 
@@ -16,9 +18,10 @@ public abstract class MemoryMapped implements Closeable {
 
     private static final int CHUNK_SIZE = 128 * 1024 * 1024; //128 MB
     private final FileType fileType;
-    protected MappedByteBuffer[] buffers;
+    protected MappedBuffer[] buffers;
     protected long size;
     private final Path baseDir;
+    protected final ReadWriteLock rwLock;
 
     private static final Class<?> UNSAFE_CLASS = resolveUnsafeClass();
     private static final Unsafe UNSAFE = resolveUnsafe();
@@ -28,6 +31,7 @@ public abstract class MemoryMapped implements Closeable {
         Objects.requireNonNull(baseDir, "baseDir is null");
         this.fileType = fileType;
         this.baseDir = baseDir;
+        this.rwLock = new ReentrantReadWriteLock(true);
         final long length = Math.max(CHUNK_SIZE, roundTo4096(defaultLength));
 
         var fileStats = readFileStats(baseDir, fileType, length);
@@ -43,9 +47,9 @@ public abstract class MemoryMapped implements Closeable {
 
     private static final class FileStats {
         final long totalSize;
-        final MappedByteBuffer[] buffers;
+        final MappedBuffer[] buffers;
 
-        private FileStats(long totalSize, MappedByteBuffer[] buffers) {
+        private FileStats(long totalSize, MappedBuffer[] buffers) {
             this.totalSize = totalSize;
             this.buffers = buffers;
         }
@@ -54,7 +58,7 @@ public abstract class MemoryMapped implements Closeable {
     private FileStats readFileStats(final Path baseDir, FileType fileType, long defaultLength) {
         var path = baseDir.resolve(fileType.filename);
         if (Files.notExists(path)) {
-            return new FileStats(defaultLength, new MappedByteBuffer[0]);
+            return new FileStats(defaultLength, new MappedBuffer[0]);
         }
 
         var file = path.toFile();
@@ -65,11 +69,11 @@ public abstract class MemoryMapped implements Closeable {
                 var fc = rf.getChannel()) {
 
                 var totalBuffersSize = (int) Math.ceil(Math.max(1d, (double) fileSize / CHUNK_SIZE));
-                var totalBuffers = new MappedByteBuffer[totalBuffersSize];
+                var totalBuffers =  new MappedBuffer[totalBuffersSize];
                 int index = 0;
                 for (long i = 0; i < fileSize; i+=CHUNK_SIZE) {
-                    totalBuffers[index] = fc.map(FileChannel.MapMode.READ_WRITE, i, CHUNK_SIZE);
-                    totalBuffers[index].order(BYTE_ORDER);
+                    totalBuffers[index] = new MappedBuffer(
+                            fc.map(FileChannel.MapMode.READ_WRITE, i, CHUNK_SIZE), UNSAFE, ADDRESS_FIELD);
                     index++;
                 }
                 return new FileStats(fileSize, totalBuffers);
@@ -83,13 +87,22 @@ public abstract class MemoryMapped implements Closeable {
         return this.size;
     }
 
-    public void remap(long newLength) {
+    private void remap(long newLength) {
         var newSize = roundTo4096(newLength);
         mapAndResize(newSize);
         this.size = newSize;
     }
 
     public void doubleGrow() {
+        rwLock.writeLock().lock();
+        try {
+            doubleGrowNoLock();
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
+
+    public void doubleGrowNoLock() {
         remap(this.size * 2);
     }
 
@@ -97,8 +110,8 @@ public abstract class MemoryMapped implements Closeable {
     public void close() {
         for (var buffer : buffers) {
             if (buffer != null) {
-                buffer.force();
-                unmap(buffer);
+                buffer.flush();
+                buffer.close();
             }
         }
     }
@@ -106,22 +119,9 @@ public abstract class MemoryMapped implements Closeable {
     public void clear() {
         for (var buffer : buffers) {
             if (buffer != null) {
-                try {
-                    var addr = ADDRESS_FIELD.getLong(buffer);
-                    UNSAFE.setMemory(addr, buffer.capacity(), (byte) 0);
-                } catch (IllegalAccessException e) {
-                    throw new UnsafeAccess(e);
-                }
+                buffer.clear();
             }
         }
-    }
-
-    private static void unmap(ByteBuffer byteBuffer) {
-        if (byteBuffer == null || !byteBuffer.isDirect()) return;
-        if (UNSAFE == null) {
-            throw new UnsupportedOperationException("Unsafe not supported on this platform");
-        }
-        UNSAFE.invokeCleaner(byteBuffer);
     }
 
     private static Class<?> resolveUnsafeClass() {
@@ -221,8 +221,11 @@ public abstract class MemoryMapped implements Closeable {
                 }
 
                 for (int i = oldLength; i < buffers.length; i++) {
-                    unmap(buffers[i]);
-                    buffers[i] = mapBuffer(fc, i, CHUNK_SIZE);
+                    var buffer = buffers[i];
+                    if (buffer != null) {
+                        buffer.close();
+                    }
+                    buffers[i] = new MappedBuffer(mapBuffer(fc, i, CHUNK_SIZE), UNSAFE, ADDRESS_FIELD);
                 }
             } catch (IOException e) {
                 throw new UncheckedIOException(e);

@@ -51,6 +51,18 @@
 
     <dependencies>
 
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>zero-allocation-hashing</artifactId>
+            <version>0.12</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>30.1-jre</version>
+        </dependency>
+
         <!--testing-->
 
         <dependency>
@@ -77,6 +89,7 @@
                     <excludes>
                         <exclude>**/performance/**</exclude>
                     </excludes>
+                    <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
 

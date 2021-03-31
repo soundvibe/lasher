@@ -1,5 +1,6 @@
 package net.soundvibe.lasher.map.performance;
 
+import net.soundvibe.lasher.map.LasherDB;
 import net.soundvibe.lasher.map.core.Lasher;
 import net.soundvibe.lasher.util.BytesSupport;
 import org.junit.jupiter.api.*;
@@ -88,7 +89,7 @@ class LasherPerformanceTest {
     }
 
     @RepeatedTest(1)
-    void performance_seq(@TempDir Path tmpPath) {
+    void performance_seq_concurrent(@TempDir Path tmpPath) {
         long recs = 20_000_000;
         var counterFound = new AtomicLong(0L);
         var counterInserted = new AtomicLong(0L);
@@ -106,14 +107,14 @@ class LasherPerformanceTest {
         var usedBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
 
         try (var sut = new Lasher(tmpPath)) {
-            var elapsedPutMs = measure(() -> entries.forEach(e -> {
+            var elapsedPutMs = measure(() -> entries.parallelStream().forEach(e -> {
                 sut.put(e.getKey(), e.getValue());
                 counterInserted.incrementAndGet();
             }));
             System.out.printf("Inserted %d rows in %d ms, %s ops/s%n",
                     counterInserted.get(), elapsedPutMs, counterInserted.get() / (elapsedPutMs / 1000d));
 
-            var elapsedGetAllMs = measure(() -> entries.forEach(e -> {
+            var elapsedGetAllMs = measure(() -> entries.parallelStream().forEach(e -> {
                 var expected = sut.get(e.getKey());
                 if (expected != null) {
                     counterFound.incrementAndGet();
@@ -123,7 +124,7 @@ class LasherPerformanceTest {
                     recs, counterFound.get(), elapsedGetAllMs, recs / (elapsedGetAllMs / 1000d));
 
             counterFound.set(0L);
-            var elapsedGetSomeRandomMs = measure(() -> entries.forEach(e -> {
+            var elapsedGetSomeRandomMs = measure(() -> entries.parallelStream().forEach(e -> {
                 var expected = sut.get(BytesSupport.toBytes(rnd.nextLong()));
                 if (expected != null) {
                     counterFound.incrementAndGet();
@@ -137,6 +138,65 @@ class LasherPerformanceTest {
             System.out.printf("Before: %s MB, after: %s MB, afterGC: %s MB, used: %s MB%n",
                     toMB(usedBefore), toMB(used), toMB(usedAfter), toMB(usedAfter - usedBefore));
             printGCStats();
+            System.out.printf("folder size %d MB%n", toMB(getFolderSize(tmpPath.toFile())));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Test
+    void performance_lasher_db_concurrent(@TempDir Path tmpPath) {
+        long recs = 20_000_000;
+        var counterFound = new AtomicLong(0L);
+        var counterInserted = new AtomicLong(0L);
+
+        var rnd = new Random();
+        var entries = LongStream.range(0, recs)
+                .mapToObj(k -> {
+                    var bytes = new byte[Math.max(16, rnd.nextInt(256))];
+                    rnd.nextBytes(bytes);
+                    return new AbstractMap.SimpleEntry<>(BytesSupport.toBytes(k), bytes);
+                })
+                .collect(Collectors.toList());
+
+        System.gc();
+        var usedBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+
+        try (var sut = new LasherDB(tmpPath, 32)) {
+            var elapsedPutMs = measure(() -> entries.parallelStream().forEach(e -> {
+                sut.put(e.getKey(), e.getValue());
+                counterInserted.incrementAndGet();
+            }));
+            System.out.printf("Inserted %d rows in %d ms, %s ops/s%n",
+                    counterInserted.get(), elapsedPutMs, counterInserted.get() / (elapsedPutMs / 1000d));
+
+            var elapsedGetAllMs = measure(() -> entries.parallelStream().forEach(e -> {
+                var expected = sut.get(e.getKey());
+                if (expected != null) {
+                    counterFound.incrementAndGet();
+                }
+            }));
+            System.out.printf("Iterated %d and found %d rows in %d ms, %s rec/s%n",
+                    recs, counterFound.get(), elapsedGetAllMs, recs / (elapsedGetAllMs / 1000d));
+
+            counterFound.set(0L);
+            var elapsedGetSomeRandomMs = measure(() -> entries.parallelStream().forEach(e -> {
+                var expected = sut.get(BytesSupport.toBytes(rnd.nextLong()));
+                if (expected != null) {
+                    counterFound.incrementAndGet();
+                }
+            }));
+            System.out.printf("Iterated %d and found %d rows in %d ms, %s rec/s%n",
+                    recs, counterFound.get(), elapsedGetSomeRandomMs, recs / (elapsedGetSomeRandomMs / 1000d));
+            var used = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+            System.gc();
+            var usedAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+            System.out.printf("Before: %s MB, after: %s MB, afterGC: %s MB, used: %s MB%n",
+                    toMB(usedBefore), toMB(used), toMB(usedAfter), toMB(usedAfter - usedBefore));
+            printGCStats();
+            System.out.printf("folder size %d MB%n", toMB(getFolderSize(tmpPath.toFile())));
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 

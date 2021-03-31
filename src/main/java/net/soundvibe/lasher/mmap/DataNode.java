@@ -120,7 +120,7 @@ public final class DataNode extends MemoryMapped {
 
         while (posBuffer + length > buffer.capacity()) {
             var remaining = buffer.capacity() - posBuffer;
-            buffer.order(BYTE_ORDER);
+           //buffer.order(BYTE_ORDER);
             buffer.get(posBuffer, data, offset, remaining);
             bufferIndex++;
             buffer = buffers[bufferIndex];
@@ -128,7 +128,7 @@ public final class DataNode extends MemoryMapped {
             offset += remaining;
             length -= remaining;
         }
-        buffer.order(BYTE_ORDER);
+        //buffer.order(BYTE_ORDER);
         buffer.get(posBuffer, data, offset, length);
     }
 
@@ -149,7 +149,7 @@ public final class DataNode extends MemoryMapped {
 
         while (posBuffer + length > buffer.capacity()) {
             var remaining = buffer.capacity() - posBuffer;
-            buffer.order(BYTE_ORDER);
+           // buffer.order(BYTE_ORDER);
             buffer.put(posBuffer, data, offset, remaining);
             bufferIndex++;
             buffer = buffers[bufferIndex];
@@ -158,7 +158,7 @@ public final class DataNode extends MemoryMapped {
             length -= remaining;
         }
 
-        buffer.order(BYTE_ORDER);
+        //buffer.order(BYTE_ORDER);
         buffer.put(posBuffer, data, offset, length);
     }
 

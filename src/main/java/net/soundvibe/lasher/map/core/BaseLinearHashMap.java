@@ -1,9 +1,13 @@
 package net.soundvibe.lasher.map.core;
 
-import net.soundvibe.lasher.mmap.*;
+import com.google.common.util.concurrent.Striped;
+import net.soundvibe.lasher.mmap.DataNode;
+import net.soundvibe.lasher.mmap.IndexNode;
 
 import java.nio.file.Path;
-import java.util.concurrent.atomic.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static net.soundvibe.lasher.util.FileSupport.deleteDirectory;
@@ -21,9 +25,9 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 
     final AtomicLong dataWritePos = new AtomicLong(0L);
 
-    final ReentrantReadWriteLock dataLock = new ReentrantReadWriteLock();
+    final Locker dataLock;
 
-    final Lock[] locks = new Lock[STRIPES];
+    final Striped<Lock> striped = Striped.lock(STRIPES);
 
     final AtomicLong size = new AtomicLong(0L);
 
@@ -33,12 +37,14 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 
     final AtomicInteger rehashIndex = new AtomicInteger(0);
 
-    private static final class Lock {}
-
     protected BaseLinearHashMap(Path baseDir, long indexFileLength, long dataFileLength) {
+        this(baseDir, indexFileLength, dataFileLength, true);
+    }
+
+    protected BaseLinearHashMap(Path baseDir, long indexFileLength, long dataFileLength, boolean locker) {
         this.baseDir = baseDir;
         this.defaultFileLength = nextPowerOf2(dataFileLength);
-        for (int i = 0; i < STRIPES; i++) locks[i] = new Lock();
+        this.dataLock = locker ? new RWLocker(new ReentrantReadWriteLock()) : new NoOpLocker();
         baseDir.toFile().mkdirs();
         this.index = new IndexNode(baseDir, nextPowerOf2(indexFileLength));
         this.data = new DataNode(baseDir, this.defaultFileLength);
@@ -54,29 +60,26 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
     }
 
     protected void writeHeader() {
-        dataLock.writeLock().lock();
-        try {
+        try (var ignored = dataLock.writeLock()) {
             data.putLong(0L, size());
             data.putLong(8L, tableLength);
             data.putLong(16L, dataWritePos.get());
             data.putInt(24L, rehashIndex.get());
-        } finally {
-            dataLock.writeLock().unlock();
         }
     }
 
     public long nextPowerOf2(long i) {
         if (i < defaultFileLength) return (defaultFileLength);
         if ((i & (i - 1)) == 0) return i;
-        return (1 << (64 - (Long.numberOfLeadingZeros(i))));
+        return (1L << (64 - (Long.numberOfLeadingZeros(i))));
     }
 
     /**
      * Returns the lock for the stripe for the given hash.  Synchronize of this
      * object before mutating the map.
      */
-    protected Object lockForHash(long hash) {
-        return locks[(int) (hash & (STRIPES - 1L))];
+    protected Lock lockForHash(long hash) {
+        return striped.getAt((int) (hash & (STRIPES - 1L)));
     }
 
     /**
@@ -92,52 +95,34 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
     }
 
     /**
-     * Recursively locks all stripes, and doubles the size of the primary mapper.
-     * On Linux your filesystem probably makes this expansion a sparse operation.
-     */
-    protected void completeExpansion(int idx) {
-        if (idx == STRIPES) {
-            rehashIndex.set(0);
-            tableLength *= 2;
-        } else {
-            synchronized (locks[idx]) {
-                completeExpansion(idx + 1);
-            }
-        }
-    }
-
-    /**
      * Perform incremental rehashing to keep the load under the threshold.
      */
     protected void rehash() {
         while (load() > LOAD_FACTOR) {
-            //If we've completed all rehashing, we need to expand the table & reset
-            //the counters.
-            if (rehashIndex.compareAndSet(STRIPES, STRIPES + 1)) {
-                completeExpansion(0);
-                return;
+            int stripeToRehash = 0;
+            try (var ignored = dataLock.writeLock()) {
+                stripeToRehash = rehashIndex.getAndIncrement();
+                if (stripeToRehash == 0) {
+                    index.doubleGrowNoLock();
+                } else if (stripeToRehash == STRIPES) {
+                    rehashIndex.set(0);
+                    tableLength *= 2;
+                    break;
+                }
             }
 
-            //Otherwise, we attempt to grab the next index to process
-            int stripeToRehash;
-            while (true) {
-                stripeToRehash = rehashIndex.getAndIncrement();
-                //If it's in the valid table range, we conceptually acquired a valid ticket
-                if (stripeToRehash < STRIPES) break;
-                //Otherwise we're in the middle of a reset - spin until it has completed.
-                while (rehashIndex.get() >= STRIPES) {
-                    Thread.yield();
-                    if (load() < LOAD_FACTOR) return;
+            var lock = dataLock.readLock();
+            var currentLength = tableLength;
+            lock.unlock();
+
+            var stripedLock = striped.getAt(stripeToRehash);
+            stripedLock.lock();
+            try {
+                for (long idx = stripeToRehash; idx < currentLength; idx += STRIPES) {
+                    rehashIdx(idx, currentLength);
                 }
-            }
-            //We now have a valid ticket - we rehash all the indexes in the given stripe
-            synchronized (locks[stripeToRehash]) {
-                if (stripeToRehash == 0) {
-                    index.doubleGrow();
-                }
-                for (long idx = stripeToRehash; idx < tableLength; idx += STRIPES) {
-                    rehashIdx(idx);
-                }
+            } finally {
+                stripedLock.unlock();
             }
         }
     }
@@ -147,8 +132,7 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
      * pointer to it.  Expands secondary storage if necessary.
      */
     protected long allocateData(long size) {
-        dataLock.readLock().lock();
-        try {
+        try (var ignored = dataLock.readLock()) {
             while (true) {
                 final long out = dataWritePos.get();
                 final long newDataPos = out + size;
@@ -161,17 +145,12 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
                     }
                 }
             }
-        } finally {
-            dataLock.readLock().unlock();
         }
 
-        dataLock.writeLock().lock();
-        try {
+        try (var ignored = dataLock.writeLock()) {
             if (dataWritePos.get() + size >= data.size()) {
                 data.doubleGrow();
             }
-        } finally {
-            dataLock.writeLock().unlock();
         }
         return allocateData(size);
     }
@@ -181,25 +160,7 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
      * we can incrementally rehash one bucket at a time.
      * This does not need to acquire a lock; the calling rehash() method handles it.
      */
-    protected abstract void rehashIdx(long idx);
-
-    private void clear(int i) {
-        if (i == STRIPES) {
-            this.dataLock.writeLock().lock();
-            try {
-                this.index.clear();
-                this.dataWritePos.set(getHeaderSize());
-                this.size.set(0);
-                this.rehashIndex.set(0);
-            } finally {
-                this.dataLock.writeLock().unlock();
-            }
-        } else {
-            synchronized (locks[i]) {
-                clear(i + 1);
-            }
-        }
-    }
+    protected abstract void rehashIdx(long idx, long tableLength);
 
     /**
      * Removes all entries from the map, zeroing the primary file and marking
@@ -208,7 +169,18 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
      * overwritten on subsequent writes.
      */
     public void clear() {
-        clear(0);
+        var lock = striped.getAt(STRIPES - 1);
+        lock.lock();
+        try {
+            try (var ignored = dataLock.writeLock()) {
+                this.index.clear();
+                this.dataWritePos.set(getHeaderSize());
+                this.size.set(0);
+                this.rehashIndex.set(0);
+            }
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -235,11 +207,16 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
      * to account for multiple records per bucket.
      */
     public double load() {
-        return size.doubleValue() / (tableLength + ((double) tableLength / (STRIPES)) * rehashIndex.get());
+        return load(rehashIndex.get());
+    }
+
+    public double load(int rehashIndex) {
+        try (var ignored = dataLock.readLock()) {
+            return size.doubleValue() / (tableLength + ((double) tableLength / (STRIPES)) * rehashIndex);
+        }
     }
 
     public boolean containsKey(byte[] k) {
         return get(k) != null;
     }
-
 }
