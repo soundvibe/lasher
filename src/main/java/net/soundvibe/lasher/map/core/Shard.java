@@ -1,8 +1,9 @@
 package net.soundvibe.lasher.map.core;
 
+import java.util.*;
 import java.util.concurrent.locks.*;
 
-public final class Shard implements AutoCloseable {
+public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], byte[]>> {
 
     private final int id;
     private final Lasher lasher;
@@ -29,6 +30,45 @@ public final class Shard implements AutoCloseable {
     public byte[] putIfAbsent(byte[] key, long hash, byte[] value) {
         try (var ignored = rwLock.writeLock()) {
             return lasher.putIfAbsent(key, hash, value);
+        }
+    }
+
+    public byte[] remove(byte[] key, long hash) {
+        try (var ignored = rwLock.writeLock()) {
+            return lasher.remove(key, hash);
+        }
+    }
+
+    public boolean remove(byte[] key, long hash, byte[] value) {
+        try (var ignored = rwLock.writeLock()) {
+            return lasher.remove(key, hash, value);
+        }
+    }
+
+    public boolean replace(byte[] key, long hash, byte[] prevVal, byte[] newVal) {
+        try (var ignored = rwLock.writeLock()) {
+            return lasher.replace(key, hash, prevVal, newVal);
+        }
+    }
+
+    public byte[] replace(byte[] key, long hash, byte[] value) {
+        try (var ignored = rwLock.writeLock()) {
+            return lasher.replace(key, hash, value);
+        }
+    }
+
+    public long size() {
+        return lasher.size();
+    }
+
+    @Override
+    public Iterator<Map.Entry<byte[], byte[]>> iterator() {
+        return lasher.iterator(rwLock);
+    }
+
+    public void clear() {
+        try (var ignored = rwLock.writeLock()) {
+            lasher.clear();
         }
     }
 
