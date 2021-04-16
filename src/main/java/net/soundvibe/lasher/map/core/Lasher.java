@@ -44,12 +44,9 @@ public class Lasher extends BaseLinearHashMap {
 	public byte[] get(byte[] key) {
 		requireNonNull(key, KEY_NOT_NULL);
 		final long hash = Hash.hashBytes(key);
-		var lock = lockForHash(hash);
-		lock.lock();
-		try {
+
+		try (var ignored = lockForHash(hash).readLock()) {
 			return get(key, hash);
-		} finally {
-			lock.unlock();
 		}
 	}
 
@@ -74,12 +71,8 @@ public class Lasher extends BaseLinearHashMap {
 		requireNonNull(value, VALUE_NOT_NULL);
 		if (load() > LOAD_FACTOR) rehash();
 		final long hash = Hash.hashBytes(key);
-		var lock = lockForHash(hash);
-		lock.lock();
-		try {
+		try (var ignored = lockForHash(hash).writeLock()) {
 			return putIfAbsent(key, hash, value);
-		} finally {
-			lock.unlock();
 		}
 	}
 
@@ -108,12 +101,8 @@ public class Lasher extends BaseLinearHashMap {
 		requireNonNull(value, VALUE_NOT_NULL);
 		rehash();
 		final long hash = Hash.hashBytes(key);
-		var lock = lockForHash(hash);
-		lock.lock();
-		try {
+		try (var ignored = lockForHash(hash).writeLock()) {
 			return put(key, hash, value, false);
-		} finally {
-			lock.unlock();
 		}
 	}
 
@@ -151,13 +140,8 @@ public class Lasher extends BaseLinearHashMap {
 	public byte[] remove(byte[] key) {
 		requireNonNull(key, KEY_NOT_NULL);
 		final long hash = Hash.hashBytes(key);
-
-		var lock = lockForHash(hash);
-		lock.lock();
-		try {
+		try (var ignored = lockForHash(hash).writeLock()) {
 			return remove(key, hash);
-		} finally {
-			lock.unlock();
 		}
 	}
 
@@ -185,13 +169,8 @@ public class Lasher extends BaseLinearHashMap {
 		requireNonNull(key, KEY_NOT_NULL);
 		requireNonNull(value, VALUE_NOT_NULL);
 		final long hash = Hash.hashBytes(key);
-
-		var lock = lockForHash(hash);
-		lock.lock();
-		try {
+		try (var ignored = lockForHash(hash).writeLock()) {
 			return remove(key, hash, value);
-		} finally {
-			lock.unlock();
 		}
 	}
 
@@ -219,12 +198,8 @@ public class Lasher extends BaseLinearHashMap {
 		requireNonNull(newVal, NEW_VALUE_NOT_NULL);
 
 		final long hash = Hash.hashBytes(key);
-		var lock = lockForHash(hash);
-		lock.lock();
-		try {
+		try (var ignored = lockForHash(hash).writeLock()) {
 			return replace(key, hash, prevVal, newVal);
-		} finally {
-			lock.unlock();
 		}
 	}
 
@@ -253,9 +228,7 @@ public class Lasher extends BaseLinearHashMap {
 		requireNonNull(value, VALUE_NOT_NULL);
 		final long hash = Hash.hashBytes(key);
 
-		var lock = lockForHash(hash);
-		lock.lock();
-		try {
+		try (var ignored = lockForHash(hash).writeLock()) {
 			final long indexPos = indexPos(hash);
 			final long adr = index.getDataAddress(indexPos);
 			if (adr == 0L) return null;
@@ -273,8 +246,6 @@ public class Lasher extends BaseLinearHashMap {
 					return null;
 				}
 			}
-		} finally {
-			lock.unlock();
 		}
 	}
 

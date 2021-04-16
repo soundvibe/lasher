@@ -1,6 +1,5 @@
 package net.soundvibe.lasher.map.core;
 
-import com.google.common.util.concurrent.Striped;
 import io.micrometer.core.instrument.*;
 import net.soundvibe.lasher.map.sync.*;
 import net.soundvibe.lasher.mmap.*;
@@ -8,8 +7,7 @@ import net.soundvibe.lasher.mmap.*;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.*;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static net.soundvibe.lasher.util.FileSupport.deleteDirectory;
 
@@ -29,7 +27,7 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 
 	final Locker dataLock;
 
-	final Striped<Lock> striped = Striped.lock(STRIPES);
+	final StripedLock striped = new StripedLock(STRIPES);
 
 	final AtomicLong size = new AtomicLong(0L);
 
@@ -58,8 +56,7 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 				Metrics.gauge("rehashing", tags, new AtomicLong(0L)));
 	}
 
-	record LinerHashMapMetrics(Timer rehashDuration, AtomicLong rehashInProgress) {
-	}
+	record LinerHashMapMetrics(Timer rehashDuration, AtomicLong rehashInProgress) {}
 
 	protected abstract void readHeader();
 
@@ -88,8 +85,8 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 	 * Returns the lock for the stripe for the given hash.  Synchronize of this
 	 * object before mutating the map.
 	 */
-	protected Lock lockForHash(long hash) {
-		return striped.getAt((int) (hash & (STRIPES - 1L)));
+	protected Locker lockForHash(long hash) {
+		return striped.get((int) (hash & (STRIPES - 1L)));
 	}
 
 	/**
@@ -132,14 +129,11 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 			var currentLength = tableLength;
 			lock.unlock();
 
-			var stripedLock = striped.getAt(stripeToRehash);
-			stripedLock.lock();
-			try {
+
+			try (var ignored = striped.get(stripeToRehash).writeLock()) {
 				for (long idx = stripeToRehash; idx < currentLength; idx += STRIPES) {
 					rehashIdx(idx, currentLength);
 				}
-			} finally {
-				stripedLock.unlock();
 			}
 		}
 		if (wasRehashed) {
@@ -190,17 +184,11 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 	 * overwritten on subsequent writes.
 	 */
 	public void clear() {
-		var lock = striped.getAt(STRIPES - 1);
-		lock.lock();
-		try {
-			try (var ignored = dataLock.writeLock()) {
-				this.index.clear();
-				this.dataWritePos.set(getHeaderSize());
-				this.size.set(0);
-				this.rehashIndex.set(0);
-			}
-		} finally {
-			lock.unlock();
+		try (var ignored = dataLock.writeLock()) {
+			this.index.clear();
+			this.dataWritePos.set(getHeaderSize());
+			this.size.set(0);
+			this.rehashIndex.set(0);
 		}
 	}
 

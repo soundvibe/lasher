@@ -80,7 +80,6 @@ class LasherTest {
             for (long i = 0; i < count; i++) {
                 assertArrayEquals(bytes, sut.get(BytesSupport.longToBytes(i)));
             }
-            System.out.println("Closing");
         }
     }
 

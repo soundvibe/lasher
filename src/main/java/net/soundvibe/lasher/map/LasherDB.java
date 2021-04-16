@@ -119,6 +119,19 @@ public final class LasherDB implements AutoCloseable {
 	}
 
 	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (o == null || getClass() != o.getClass()) return false;
+		LasherDB lasherDB = (LasherDB) o;
+		return id.equals(lasherDB.id);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(id);
+	}
+
+	@Override
 	public void close() {
 		for (var shard : shards) {
 			shard.close();
