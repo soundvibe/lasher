@@ -16,7 +16,10 @@ import static net.soundvibe.lasher.util.BytesSupport.BYTE_ORDER;
 
 public abstract class MemoryMapped implements Closeable {
 
-    private static final int CHUNK_SIZE = 128 * 1024 * 1024; //128 MB
+	private static final int MIN_CHUNK_SIZE = 32 * 1024 * 1024; // 32 MB
+	private static final int MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64 MB
+
+    private final int chunkSize;
     private final FileType fileType;
     protected MappedBuffer[] buffers;
     protected long size;
@@ -32,7 +35,8 @@ public abstract class MemoryMapped implements Closeable {
         this.fileType = fileType;
         this.baseDir = baseDir;
         this.rwLock = new ReentrantReadWriteLock(true);
-        final long length = Math.max(CHUNK_SIZE, roundTo4096(defaultLength));
+        this.chunkSize = Math.max(MIN_CHUNK_SIZE, Math.min(MAX_CHUNK_SIZE, (int) roundTo4096(defaultLength)));
+        final long length = Math.max(this.chunkSize, roundTo4096(defaultLength));
 
         var fileStats = readFileStats(baseDir, fileType, length);
         this.size = Math.max(length, fileStats.totalSize);
@@ -68,12 +72,12 @@ public abstract class MemoryMapped implements Closeable {
             try (var rf = new RandomAccessFile(file, "rw");
                 var fc = rf.getChannel()) {
 
-                var totalBuffersSize = (int) Math.ceil(Math.max(1d, (double) fileSize / CHUNK_SIZE));
+                var totalBuffersSize = (int) Math.ceil(Math.max(1d, (double) fileSize / chunkSize));
                 var totalBuffers =  new MappedBuffer[totalBuffersSize];
                 int index = 0;
-                for (long i = 0; i < fileSize; i+=CHUNK_SIZE) {
+                for (long i = 0; i < fileSize; i+= chunkSize) {
                     totalBuffers[index] = new MappedBuffer(
-                            fc.map(FileChannel.MapMode.READ_WRITE, i, CHUNK_SIZE), UNSAFE, ADDRESS_FIELD);
+                            fc.map(FileChannel.MapMode.READ_WRITE, i, chunkSize), UNSAFE, ADDRESS_FIELD);
                     index++;
                 }
                 return new FileStats(fileSize, totalBuffers);
@@ -189,20 +193,20 @@ public abstract class MemoryMapped implements Closeable {
     }
 
     protected int convertPos(long absolutePos, int bufferIndex) {
-        long startPos = (long) CHUNK_SIZE * (long) bufferIndex;
+        long startPos = (long) chunkSize * (long) bufferIndex;
         int bufferPos = (int) (absolutePos - startPos);
-        if (bufferPos < 0 || bufferPos > CHUNK_SIZE) {
-            throw new IndexOutOfBoundsException("Buffer pos " + bufferPos + " is out of bounds: " + CHUNK_SIZE + " for pos: " + absolutePos + " and buffer index: " + bufferIndex);
+        if (bufferPos < 0 || bufferPos > chunkSize) {
+            throw new IndexOutOfBoundsException("Buffer pos " + bufferPos + " is out of bounds: " + chunkSize + " for pos: " + absolutePos + " and buffer index: " + bufferIndex);
         }
         return bufferPos;
     }
 
     protected int findBufferIndex(long pos) {
-        return (int) Math.floorDiv(pos, CHUNK_SIZE);
+        return (int) Math.floorDiv(pos, chunkSize);
     }
 
     protected int resolveBufferIndex(long pos) {
-        int ix = (int) Math.floorDiv(pos, CHUNK_SIZE);
+        int ix = (int) Math.floorDiv(pos, chunkSize);
         if (ix < 0 || ix >= buffers.length) {
             throw new IndexOutOfBoundsException("Buffer index " + ix + " is out of total length: " + buffers.length + " for pos " + pos);
         }
@@ -225,7 +229,7 @@ public abstract class MemoryMapped implements Closeable {
                     if (buffer != null) {
                         buffer.close();
                     }
-                    buffers[i] = new MappedBuffer(mapBuffer(fc, i, CHUNK_SIZE), UNSAFE, ADDRESS_FIELD);
+                    buffers[i] = new MappedBuffer(mapBuffer(fc, i, chunkSize), UNSAFE, ADDRESS_FIELD);
                 }
             } catch (IOException e) {
                 throw new UncheckedIOException(e);

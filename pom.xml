@@ -34,7 +34,7 @@
     </developers>
 
     <properties>
-        <java.version>14</java.version>
+        <java.version>15</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -63,12 +63,18 @@
             <version>30.1-jre</version>
         </dependency>
 
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-core</artifactId>
+			<version>1.6.5</version>
+		</dependency>
+
         <!--testing-->
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.6.2</version>
+            <version>5.7.1</version>
             <scope>test</scope>
         </dependency>
 
@@ -90,6 +96,7 @@
                         <exclude>**/performance/**</exclude>
                     </excludes>
                     <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
+                    <argLine>--enable-preview</argLine>
                 </configuration>
             </plugin>
 
@@ -100,6 +107,9 @@
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
+					<compilerArgs>
+						<arg>--enable-preview</arg>
+					</compilerArgs>
                 </configuration>
             </plugin>
 

@@ -1,5 +1,9 @@
 package net.soundvibe.lasher.map.core;
 
+import io.micrometer.core.instrument.*;
+import io.micrometer.core.instrument.Timer;
+import net.soundvibe.lasher.map.sync.*;
+
 import java.util.*;
 import java.util.concurrent.locks.*;
 
@@ -8,23 +12,36 @@ public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], by
     private final int id;
     private final Lasher lasher;
     private final Locker rwLock;
+    private final ShardMetrics metrics;
+
+    record ShardMetrics(Timer getLatency, Timer putLatency) {}
 
     public Shard(int id, Lasher lasher) {
         this.id = id;
         this.lasher = lasher;
         this.rwLock = new RWLocker(new ReentrantReadWriteLock());
+		var tags = Tags.of(Tag.of("shard", String.valueOf(id)));
+		Metrics.gauge("shard-size", tags, this, Shard::size);
+		this.metrics = new ShardMetrics(
+				Metrics.timer("shard-get-latency", tags),
+				Metrics.timer("shard-put-latency", tags)
+		);
     }
 
     public byte[] get(byte[] key, long hash) {
-        try (var ignored = rwLock.readLock()) {
-           return lasher.get(key, hash);
-        }
+    	return metrics.getLatency.record(() -> {
+    		try (var ignored = rwLock.readLock()) {
+				return lasher.get(key, hash);
+			}
+		});
     }
 
     public byte[] put(byte[] key, long hash, byte[] value) {
-        try (var ignored = rwLock.writeLock()) {
-            return lasher.put(key, hash, value, true);
-        }
+    	return metrics.putLatency.record(() -> {
+			try (var ignored = rwLock.writeLock()) {
+				return lasher.put(key, hash, value, true);
+			}
+		});
     }
 
     public byte[] putIfAbsent(byte[] key, long hash, byte[] value) {

@@ -1,4 +1,4 @@
-package net.soundvibe.lasher.map.core;
+package net.soundvibe.lasher.map.sync;
 
 public interface Lock extends AutoCloseable {
 

@@ -1,4 +1,4 @@
-package net.soundvibe.lasher.map.core;
+package net.soundvibe.lasher.map.sync;
 
 import java.util.concurrent.locks.*;
 
