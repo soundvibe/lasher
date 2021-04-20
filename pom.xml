@@ -90,7 +90,7 @@
                         <exclude>**/performance/**</exclude>
                     </excludes>
                     <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
-                    <argLine>--enable-preview</argLine>
+                    <!--<argLine>&#45;&#45;enable-preview</argLine>-->
                 </configuration>
             </plugin>
 
@@ -101,9 +101,9 @@
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
-					<compilerArgs>
-						<arg>--enable-preview</arg>
-					</compilerArgs>
+					<!--<compilerArgs>
+						<arg>&#45;&#45;enable-preview</arg>
+					</compilerArgs>-->
                 </configuration>
             </plugin>
 
@@ -134,7 +134,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.5</version>
+                <version>0.8.6</version>
                 <executions>
                     <execution>
                         <goals>

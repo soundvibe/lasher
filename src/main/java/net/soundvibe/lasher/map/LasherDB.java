@@ -29,10 +29,7 @@ public final class LasherDB implements AutoCloseable {
 		this.id = UUID.randomUUID();
 		var tags = Tags.of(Tag.of("lasherId", id.toString()));
 		this.shards = IntStream.range(0, shards)
-				.mapToObj(i -> new Shard(
-						i,
-						Lasher.forShard(baseDir.resolve("shard_" + i), indexFileLength, dataFileLength, tags)
-				))
+				.mapToObj(i -> new Shard(i, baseDir.resolve("shard_" + i), indexFileLength, dataFileLength, tags))
 				.collect(toList());
 		Metrics.gauge("shards", tags, shards);
 	}
@@ -135,6 +132,12 @@ public final class LasherDB implements AutoCloseable {
 	public void close() {
 		for (var shard : shards) {
 			shard.close();
+		}
+	}
+
+	public void delete() {
+		for (var shard : shards) {
+			shard.delete();
 		}
 	}
 }

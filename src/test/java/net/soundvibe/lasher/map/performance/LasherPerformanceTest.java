@@ -1,7 +1,5 @@
 package net.soundvibe.lasher.map.performance;
 
-import io.micrometer.core.instrument.Metrics;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import net.soundvibe.lasher.map.LasherDB;
 import net.soundvibe.lasher.map.core.Lasher;
 import net.soundvibe.lasher.util.BytesSupport;
@@ -21,18 +19,6 @@ import static org.junit.jupiter.api.Assertions.*;
 @Tag("performance")
 @Disabled
 class LasherPerformanceTest {
-
-	private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-
-	@BeforeEach
-	void setUp() {
-		Metrics.addRegistry(registry);
-	}
-
-	@AfterEach
-	void tearDown() {
-		Metrics.removeRegistry(registry);
-	}
 
 	@RepeatedTest(1)
 	void performance_huge_sequential(@TempDir Path tmpPath) {

@@ -1,11 +1,12 @@
 package net.soundvibe.lasher.map.core;
 
-import io.micrometer.core.instrument.*;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.*;
 import net.soundvibe.lasher.map.sync.*;
 
+import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.locks.*;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], byte[]>> {
 
@@ -14,19 +15,19 @@ public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], by
     private final Locker rwLock;
     private final ShardMetrics metrics;
 
-    record ShardMetrics(Timer getLatency, Timer putLatency) {}
+	record ShardMetrics(Timer getLatency, Timer putLatency) {}
 
-    public Shard(int id, Lasher lasher) {
-        this.id = id;
-        this.lasher = lasher;
-        this.rwLock = new RWLocker(new ReentrantReadWriteLock());
-		var tags = Tags.of(Tag.of("shard", String.valueOf(id)));
-		Metrics.gauge("shard-size", tags, this, Shard::size);
+    public Shard(int id, Path path, long indexFileLength, long dataFileLength, Tags tags) {
+		this.id = id;
+		var shardTags = tags.and(Tag.of("shard", String.valueOf(id)));
+		this.lasher = Lasher.forShard(path, indexFileLength, dataFileLength, shardTags);
+		this.rwLock = new RWLocker(new ReentrantReadWriteLock());
+		Metrics.gauge("shard-size", shardTags, this, Shard::size);
 		this.metrics = new ShardMetrics(
-				Metrics.timer("shard-get-latency", tags),
-				Metrics.timer("shard-put-latency", tags)
+				Metrics.timer("shard-get-latency", shardTags),
+				Metrics.timer("shard-put-latency", shardTags)
 		);
-    }
+	}
 
     public byte[] get(byte[] key, long hash) {
     	return metrics.getLatency.record(() -> {
@@ -39,14 +40,14 @@ public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], by
     public byte[] put(byte[] key, long hash, byte[] value) {
     	return metrics.putLatency.record(() -> {
 			try (var ignored = rwLock.writeLock()) {
-				return lasher.put(key, hash, value, true);
+				return lasher.put(key, value, hash);
 			}
 		});
     }
 
     public byte[] putIfAbsent(byte[] key, long hash, byte[] value) {
         try (var ignored = rwLock.writeLock()) {
-            return lasher.putIfAbsent(key, hash, value);
+            return lasher.putIfAbsent(key, value, hash);
         }
     }
 
@@ -58,7 +59,7 @@ public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], by
 
     public boolean remove(byte[] key, long hash, byte[] value) {
         try (var ignored = rwLock.writeLock()) {
-            return lasher.remove(key, hash, value);
+            return lasher.remove(key, value, hash);
         }
     }
 
@@ -70,7 +71,7 @@ public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], by
 
     public byte[] replace(byte[] key, long hash, byte[] value) {
         try (var ignored = rwLock.writeLock()) {
-            return lasher.replace(key, hash, value);
+            return lasher.replace(key, value, hash);
         }
     }
 
@@ -89,7 +90,13 @@ public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], by
         }
     }
 
-    @Override
+	public void delete() {
+		try (var ignored = rwLock.writeLock()) {
+			lasher.delete();
+		}
+	}
+
+	@Override
     public void close() {
         try (var ignored = rwLock.writeLock()) {
             lasher.close();

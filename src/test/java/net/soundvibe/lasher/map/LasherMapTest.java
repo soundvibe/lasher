@@ -1,6 +1,5 @@
 package net.soundvibe.lasher.map;
 
-import net.soundvibe.lasher.map.core.Lasher;
 import net.soundvibe.lasher.serde.Serdes;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,13 +14,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayNameGeneration(DisplayNameGenerator.ReplaceUnderscores.class)
 class LasherMapTest {
 
-    private static final long MB_32 = (long) Math.pow(2, 25L);
-
     @Test
     void should_do_basic_operations(@TempDir Path tmpPath) {
-        try (var sut = new LasherMap<>(
-                new Lasher(tmpPath, MB_32, MB_32),
-                Serdes.STRING, Serdes.STRING)) {
+        try (var sut = new LasherMap<>(new LasherDB(tmpPath), Serdes.STRING, Serdes.STRING)) {
             assertNull(sut.get("foo"));
 
             assertNull(sut.put("foo", "value"));
@@ -63,9 +58,7 @@ class LasherMapTest {
 
     @Test
     void should_iterate(@TempDir Path tmpPath) {
-        try (var sut = new LasherMap<>(
-                new Lasher(tmpPath, MB_32, MB_32),
-                Serdes.LONG, Serdes.LONG)) {
+        try (var sut = new LasherMap<>(new LasherDB(tmpPath), Serdes.LONG, Serdes.LONG)) {
             var rng = new Random();
             var m = new ConcurrentHashMap<Long, Long>(1000);
             long nInserts = 1000;

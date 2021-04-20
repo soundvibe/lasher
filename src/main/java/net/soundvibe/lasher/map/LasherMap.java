@@ -1,6 +1,5 @@
 package net.soundvibe.lasher.map;
 
-import net.soundvibe.lasher.map.core.Lasher;
 import net.soundvibe.lasher.serde.Serde;
 
 import java.util.*;
@@ -8,32 +7,32 @@ import java.util.concurrent.ConcurrentMap;
 
 public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K, V>, AutoCloseable {
 
-    private final Lasher map;
+    private final LasherDB lasherDB;
     private final Serde<K> keySerde;
     private final Serde<V> valSerde;
 
-    public LasherMap(Lasher map, Serde<K> keySerde, Serde<V> valSerde) {
-        this.map = map;
+    public LasherMap(LasherDB lasherDB, Serde<K> keySerde, Serde<V> valSerde) {
+        this.lasherDB = lasherDB;
         this.keySerde = keySerde;
         this.valSerde = valSerde;
     }
 
     @Override
     public void close() {
-        map.close();
+        lasherDB.close();
     }
 
     public void delete() {
-        map.delete();
+        lasherDB.delete();
     }
 
     @Override
     public int size() {
-        return (int) map.size();
+        return (int) lasherDB.size();
     }
 
     public long sizeLong() {
-        return map.size();
+        return lasherDB.size();
     }
 
     @Override
@@ -44,14 +43,14 @@ public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K,
     @Override
     public V get(Object key) {
         var kBytes = keySerde.toBytes( (K)key);
-        var out = map.get(kBytes);
+        var out = lasherDB.get(kBytes);
         if (out == null) return null;
         return valSerde.fromBytes(out);
     }
 
     @Override
     public V put(K key, V value) {
-        var old = map.put(keySerde.toBytes(key), valSerde.toBytes(value));
+        var old = lasherDB.put(keySerde.toBytes(key), valSerde.toBytes(value));
         if (old == null) return null;
         return valSerde.fromBytes(old);
     }
@@ -59,14 +58,14 @@ public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K,
     @Override
     public V remove(Object key) {
         var kBytes = keySerde.toBytes((K)key);
-        var old = map.remove(kBytes);
+        var old = lasherDB.remove(kBytes);
         if (old == null) return null;
         return valSerde.fromBytes(old);
     }
 
     @Override
     public void clear() {
-        map.clear();
+        lasherDB.clear();
     }
 
     @Override
@@ -76,7 +75,7 @@ public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K,
 
     @Override
     public V putIfAbsent(K key, V value) {
-        var old = map.putIfAbsent(keySerde.toBytes(key), valSerde.toBytes(value));
+        var old = lasherDB.putIfAbsent(keySerde.toBytes(key), valSerde.toBytes(value));
         if (old == null) return null;
         return valSerde.fromBytes(old);
     }
@@ -85,7 +84,7 @@ public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K,
     public boolean remove(Object key, Object value) {
         var kBytes = keySerde.toBytes((K)key);
         var vBytes = valSerde.toBytes((V)value);
-        return map.remove(kBytes, vBytes);
+        return lasherDB.remove(kBytes, vBytes);
     }
 
     @Override
@@ -93,14 +92,14 @@ public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K,
         var kBytes = keySerde.toBytes(key);
         var oldValBytes = valSerde.toBytes(oldValue);
         var newValBytes = valSerde.toBytes(newValue);
-        return map.replace(kBytes, oldValBytes, newValBytes);
+        return lasherDB.replace(kBytes, oldValBytes, newValBytes);
     }
 
     @Override
     public V replace(K key, V value) {
         var kBytes = keySerde.toBytes(key);
         var vBytes = valSerde.toBytes(value);
-        var out = map.replace(kBytes, vBytes);
+        var out = lasherDB.replace(kBytes, vBytes);
         if (out == null) return null;
         return valSerde.fromBytes(out);
     }
@@ -114,7 +113,7 @@ public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K,
         @Override
         public Iterator<Map.Entry<K, V>> iterator() {
             return new Iterator<>() {
-                final Iterator<Map.Entry<byte[], byte[]>> backingIt = map.iterator();
+                final Iterator<Map.Entry<byte[], byte[]>> backingIt = lasherDB.iterator();
 
                 @Override
                 public boolean hasNext() {

@@ -13,6 +13,7 @@ import static net.soundvibe.lasher.util.FileSupport.deleteDirectory;
 
 public abstract class BaseLinearHashMap implements AutoCloseable {
 
+	private static final long HEADER_SIZE = 28L;
 	static final int STRIPES = (int) Math.pow(2, 8);
 	static final double LOAD_FACTOR = 0.75;
 
@@ -22,19 +23,12 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 	final DataNode data;
 	final Path baseDir;
 	final LinerHashMapMetrics metrics;
-
-	final AtomicLong dataWritePos = new AtomicLong(0L);
-
 	final Locker dataLock;
-
-	final StripedLock striped = new StripedLock(STRIPES);
-
-	final AtomicLong size = new AtomicLong(0L);
 
 	long tableLength;
 
-	private static final long HEADER_SIZE = 28L;
-
+	final AtomicLong dataWritePos = new AtomicLong(0L);
+	final AtomicLong size = new AtomicLong(0L);
 	final AtomicInteger rehashIndex = new AtomicInteger(0);
 
 	protected BaseLinearHashMap(Path baseDir, long indexFileLength, long dataFileLength) {
@@ -53,10 +47,11 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 		Metrics.gauge("data-size-bytes", tags, this.data, MemoryMapped::size);
 		this.metrics = new LinerHashMapMetrics(
 				Metrics.timer("rehash-duration", tags),
-				Metrics.gauge("rehashing", tags, new AtomicLong(0L)));
+				Metrics.gauge("rehashing", tags, new AtomicLong(0L)),
+				Metrics.counter("rehash-count", tags));
 	}
 
-	record LinerHashMapMetrics(Timer rehashDuration, AtomicLong rehashInProgress) {}
+	record LinerHashMapMetrics(Timer rehashDuration, AtomicLong rehashInProgress, Counter rehashCounter) {}
 
 	protected abstract void readHeader();
 
@@ -82,14 +77,6 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 	}
 
 	/**
-	 * Returns the lock for the stripe for the given hash.  Synchronize of this
-	 * object before mutating the map.
-	 */
-	protected Locker lockForHash(long hash) {
-		return striped.get((int) (hash & (STRIPES - 1L)));
-	}
-
-	/**
 	 * Returns the bucket index for the given hash.
 	 * This doesn't lock - because it depends on tableLength, callers should
 	 * establish some lock that precludes a full rehash (read or write lock on
@@ -112,6 +99,7 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 				metrics.rehashInProgress.set(1L);
 				rehashStarted = System.currentTimeMillis();
 			}
+
 			wasRehashed = true;
 			int stripeToRehash = 0;
 			try (var ignored = dataLock.writeLock()) {
@@ -129,15 +117,14 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 			var currentLength = tableLength;
 			lock.unlock();
 
-
-			try (var ignored = striped.get(stripeToRehash).writeLock()) {
-				for (long idx = stripeToRehash; idx < currentLength; idx += STRIPES) {
-					rehashIdx(idx, currentLength);
-				}
+			for (long idx = stripeToRehash; idx < currentLength; idx += STRIPES) {
+				rehashIdx(idx, currentLength);
 			}
+
 		}
 		if (wasRehashed) {
 			metrics.rehashInProgress.set(0L);
+			metrics.rehashCounter.increment();
 			metrics.rehashDuration.record(System.currentTimeMillis() - rehashStarted, TimeUnit.MILLISECONDS);
 		}
 	}

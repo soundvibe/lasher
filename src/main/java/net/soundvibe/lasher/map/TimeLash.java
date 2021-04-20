@@ -1,6 +1,5 @@
 package net.soundvibe.lasher.map;
 
-import net.soundvibe.lasher.map.core.Lasher;
 import net.soundvibe.lasher.serde.Serde;
 
 import java.nio.file.Path;
@@ -145,7 +144,7 @@ public class TimeLash<K,V> implements AutoCloseable, Iterable<Map.Entry<K,V>> {
     }
 
     private LasherMap<K,V> createNewMap(long bucket) {
-        var lasher = new Lasher(baseDir.resolve(Long.toString(bucket)));
+        var lasher = new LasherDB(baseDir.resolve(Long.toString(bucket)));
         return new LasherMap<>(lasher, keySerde, valSerde);
     }
 
