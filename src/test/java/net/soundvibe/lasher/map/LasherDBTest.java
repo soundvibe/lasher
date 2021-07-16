@@ -1,5 +1,6 @@
 package net.soundvibe.lasher.map;
 
+import net.soundvibe.lasher.db.LasherDB;
 import net.soundvibe.lasher.util.BytesSupport;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;

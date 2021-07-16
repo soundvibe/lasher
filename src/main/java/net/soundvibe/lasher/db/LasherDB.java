@@ -1,4 +1,4 @@
-package net.soundvibe.lasher.map;
+package net.soundvibe.lasher.db;
 
 import io.micrometer.core.instrument.*;
 import net.soundvibe.lasher.map.core.*;

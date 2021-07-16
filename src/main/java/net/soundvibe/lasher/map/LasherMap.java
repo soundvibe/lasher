@@ -1,5 +1,6 @@
 package net.soundvibe.lasher.map;
 
+import net.soundvibe.lasher.db.LasherDB;
 import net.soundvibe.lasher.serde.Serde;
 
 import java.util.*;

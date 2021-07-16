@@ -2,15 +2,9 @@ package net.soundvibe.lasher.map.sync;
 
 import java.util.concurrent.locks.*;
 
-public final class RWLocker implements Locker {
+public record RWLocker(ReadWriteLock rwLock) implements Locker {
 
-    private final ReadWriteLock rwLock;
-
-    public RWLocker(ReadWriteLock rwLock) {
-        this.rwLock = rwLock;
-    }
-
-    @Override
+	@Override
     public Lock readLock() {
         rwLock.readLock().lock();
         return () -> rwLock.readLock().unlock();

@@ -1,6 +1,6 @@
 package net.soundvibe.lasher.map.performance;
 
-import net.soundvibe.lasher.map.LasherDB;
+import net.soundvibe.lasher.db.LasherDB;
 import net.soundvibe.lasher.map.core.Lasher;
 import net.soundvibe.lasher.util.BytesSupport;
 import org.junit.jupiter.api.*;

@@ -1,5 +1,6 @@
-package net.soundvibe.lasher.map;
+package net.soundvibe.lasher.db;
 
+import net.soundvibe.lasher.map.LasherMap;
 import net.soundvibe.lasher.serde.Serde;
 
 import java.nio.file.Path;

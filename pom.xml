@@ -90,6 +90,7 @@
                         <exclude>**/performance/**</exclude>
                     </excludes>
                     <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
+                    <argLine>--illegal-access=permit</argLine>
                     <!--<argLine>&#45;&#45;enable-preview</argLine>-->
                 </configuration>
             </plugin>

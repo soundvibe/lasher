@@ -86,9 +86,9 @@ public final class DataNode extends MemoryMapped {
             var valBytes = new byte[Integer.BYTES];
             getBytes(pos, valBytes);
             return BytesSupport.bytesToInt(valBytes);
-        } else {
-            return buffer.getInt(posBuffer);
         }
+
+        return buffer.getInt(posBuffer);
     }
 
     public void putInt(long pos, int val) {
@@ -104,9 +104,10 @@ public final class DataNode extends MemoryMapped {
         if (posBuffer + Integer.BYTES > buffer.capacity()) {
             var valBytes = BytesSupport.intToBytes(val);
             putBytes(pos, valBytes);
-        } else {
-            buffer.putInt(posBuffer, val);
+            return;
         }
+
+        buffer.putInt(posBuffer, val);
     }
 
     public void getBytes(long pos, byte[] data) {
@@ -120,7 +121,6 @@ public final class DataNode extends MemoryMapped {
 
         while (posBuffer + length > buffer.capacity()) {
             var remaining = buffer.capacity() - posBuffer;
-           //buffer.order(BYTE_ORDER);
             buffer.get(posBuffer, data, offset, remaining);
             bufferIndex++;
             buffer = buffers[bufferIndex];
@@ -128,7 +128,7 @@ public final class DataNode extends MemoryMapped {
             offset += remaining;
             length -= remaining;
         }
-        //buffer.order(BYTE_ORDER);
+
         buffer.get(posBuffer, data, offset, length);
     }
 
@@ -158,7 +158,6 @@ public final class DataNode extends MemoryMapped {
             length -= remaining;
         }
 
-        //buffer.order(BYTE_ORDER);
         buffer.put(posBuffer, data, offset, length);
     }
 
@@ -172,9 +171,9 @@ public final class DataNode extends MemoryMapped {
             var valBytes = new byte[Long.BYTES];
             getBytes(pos, valBytes);
             return BytesSupport.bytesToLong(valBytes);
-        } else {
-            return buffer.getLong(posBuffer);
         }
+
+        return buffer.getLong(posBuffer);
     }
 
     @Override
@@ -190,8 +189,9 @@ public final class DataNode extends MemoryMapped {
         if (posBuffer + Long.BYTES > buffer.capacity()) {
             var valBytes = BytesSupport.longToBytes(val);
             putBytes(pos, valBytes);
-        } else {
-            buffer.putLong(posBuffer, val);
+            return;
         }
+
+        buffer.putLong(posBuffer, val);
     }
 }
