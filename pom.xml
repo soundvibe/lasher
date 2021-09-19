@@ -34,7 +34,7 @@
     </developers>
 
     <properties>
-        <java.version>16</java.version>
+        <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -68,7 +68,7 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.7.1</version>
+            <version>5.8.0</version>
             <scope>test</scope>
         </dependency>
 
@@ -78,7 +78,7 @@
         <plugins>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>2.22.2</version>
+                <version>3.0.0-M5</version>
                 <configuration>
                     <includes>
                         <include>**/Test*.java</include>
@@ -90,8 +90,6 @@
                         <exclude>**/performance/**</exclude>
                     </excludes>
                     <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
-                    <argLine>--illegal-access=permit</argLine>
-                    <!--<argLine>&#45;&#45;enable-preview</argLine>-->
                 </configuration>
             </plugin>
 
@@ -102,9 +100,6 @@
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
-					<!--<compilerArgs>
-						<arg>&#45;&#45;enable-preview</arg>
-					</compilerArgs>-->
                 </configuration>
             </plugin>
 
@@ -135,7 +130,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.6</version>
+                <version>0.8.7</version>
                 <executions>
                     <execution>
                         <goals>

@@ -49,15 +49,7 @@ public abstract class MemoryMapped implements Closeable {
     public abstract long getLong(long pos);
     public abstract void putLong(long pos, long val);
 
-    private static final class FileStats {
-        final long totalSize;
-        final MappedBuffer[] buffers;
-
-        private FileStats(long totalSize, MappedBuffer[] buffers) {
-            this.totalSize = totalSize;
-            this.buffers = buffers;
-        }
-    }
+	private record FileStats(long totalSize, MappedBuffer[] buffers) {}
 
     private FileStats readFileStats(final Path baseDir, FileType fileType, long defaultLength) {
         var path = baseDir.resolve(fileType.filename);

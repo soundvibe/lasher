@@ -138,10 +138,11 @@ public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K,
 
         @Override
         public boolean contains(Object o) {
-            if (!(o instanceof Map.Entry)) return false;
-            var e = (Map.Entry<K, V>) o;
-            final V v = get(e.getKey());
-            return v == null ? e.getValue() == null : v.equals(e.getValue());
+			if (!(o instanceof Map.Entry e)) {
+				return false;
+			}
+			final V v = LasherMap.this.get(e.getKey());
+			return v == null ? e.getValue() == null : v.equals(e.getValue());
         }
 
         @Override
@@ -151,8 +152,7 @@ public class LasherMap<K,V> extends AbstractMap<K,V> implements ConcurrentMap<K,
 
         @Override
         public boolean remove(Object o) {
-            if (!(o instanceof Map.Entry)) return false;
-            var e = (Map.Entry<K, V>) o;
+            if (!(o instanceof Map.Entry e)) return false;
             return LasherMap.this.remove(e.getKey(), e.getValue());
         }
     }
