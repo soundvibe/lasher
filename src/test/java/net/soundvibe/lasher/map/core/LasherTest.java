@@ -1,5 +1,7 @@
 package net.soundvibe.lasher.map.core;
 
+import io.micrometer.core.instrument.*;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import net.soundvibe.lasher.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,8 +17,19 @@ class LasherTest {
 
     private static final long MB_32 = (long) Math.pow(2, 25L);
     private static final long MB_64 = (long) Math.pow(2, 26L);
+    private final MeterRegistry registry = new SimpleMeterRegistry();
 
-    @Test
+	@BeforeEach
+	void setUp() {
+		Metrics.addRegistry(registry);
+	}
+
+	@AfterEach
+	void tearDown() {
+		Metrics.removeRegistry(registry);
+	}
+
+	@Test
     void should_do_basic_operations(@TempDir Path tmpPath) {
         try (var sut = new Lasher(tmpPath, MB_32, MB_32)) {
             assertNull(sut.get("foo".getBytes()));
@@ -80,7 +93,9 @@ class LasherTest {
             for (long i = 0; i < count; i++) {
                 assertArrayEquals(bytes, sut.get(BytesSupport.longToBytes(i)));
             }
-            System.out.println("Closing");
+
+            var rehashCount = ((long) sut.metrics.rehashCounter().count());
+            assertTrue(rehashCount > 0L);
         }
     }
 
@@ -174,48 +189,6 @@ class LasherTest {
                 assertEquals(i+1
                         , BytesSupport.bytesToLong(v)
                         , "Unexpected inequality on index " + idx + ".");
-            }
-        }
-    }
-
-    @Test
-    void should_allow_concurrent_inserts(@TempDir Path tmpPath) throws Exception {
-        try (var sut = new Lasher(tmpPath, MB_32, MB_32)) {
-            final int recsPerThread = 750000;
-
-            var t1 = new Thread(() -> {
-                for(long i=0; i<recsPerThread; i++){
-                    final byte[] k = BytesSupport.longToBytes(i);
-                    final byte[] v = BytesSupport.longToBytes(i+1);
-                    sut.put(k, v);
-                }
-            });
-            var t2 = new Thread(() -> {
-                for(long i=recsPerThread; i<recsPerThread*2; i++){
-                    final byte[] k = BytesSupport.longToBytes(i);
-                    final byte[] v = BytesSupport.longToBytes(i+1);
-                    sut.put(k, v);
-                }
-            });
-            var t3 = new Thread(() -> {
-                for(long i=recsPerThread*2; i<recsPerThread*3; i++){
-                    final byte[] k = BytesSupport.longToBytes(i);
-                    final byte[] v = BytesSupport.longToBytes(i+1);
-                    sut.put(k, v);
-                }
-            });
-            var t4 = new Thread(() -> {
-                for(long i=recsPerThread*3; i<recsPerThread*4; i++){
-                    final byte[] k = BytesSupport.longToBytes(i);
-                    final byte[] v = BytesSupport.longToBytes(i+1);
-                    sut.put(k, v);
-                }
-            });
-
-            t1.start(); t2.start(); t3.start(); t4.start();
-            t1.join();  t2.join();  t3.join();  t4.join();
-            for(long i=0; i<recsPerThread*4; i++){
-                assertEquals(BytesSupport.bytesToLong(sut.get(BytesSupport.longToBytes(i))), i+1);
             }
         }
     }

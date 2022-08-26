@@ -6,7 +6,7 @@
 
     <groupId>net.soundvibe</groupId>
     <artifactId>lasher</artifactId>
-    <version>0.0.2</version>
+    <version>0.0.3</version>
     <packaging>jar</packaging>
     <name>lasher</name>
     <description>Embeddable persistent key-value store</description>
@@ -34,7 +34,7 @@
     </developers>
 
     <properties>
-        <java.version>14</java.version>
+        <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -51,12 +51,24 @@
 
     <dependencies>
 
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>zero-allocation-hashing</artifactId>
+            <version>0.16</version>
+        </dependency>
+
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-core</artifactId>
+			<version>1.9.3</version>
+		</dependency>
+
         <!--testing-->
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.6.2</version>
+            <version>5.9.0</version>
             <scope>test</scope>
         </dependency>
 
@@ -66,7 +78,7 @@
         <plugins>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>2.22.2</version>
+                <version>3.0.0-M5</version>
                 <configuration>
                     <includes>
                         <include>**/Test*.java</include>
@@ -77,6 +89,7 @@
                     <excludes>
                         <exclude>**/performance/**</exclude>
                     </excludes>
+                    <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
 
@@ -117,7 +130,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.5</version>
+                <version>0.8.7</version>
                 <executions>
                     <execution>
                         <goals>
@@ -164,7 +177,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>3.0.1</version>
+                        <version>3.4.1</version>
                         <executions>
                             <execution>
                                 <id>attach-javadocs</id>

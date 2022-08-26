@@ -1,13 +1,13 @@
 name: Build and run tests
- 
+
 on: [push]
- 
+
 jobs:
   compile:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        java: [14, 15]
+        java: [17, 18]
     name: Java ${{ matrix.java }} run tests
     steps:
       - uses: actions/checkout@v2
@@ -20,4 +20,4 @@ jobs:
         uses: codecov/codecov-action@v1.2.1
         with:
           file: ./target/site/jacoco/jacoco.xml
-          flags: unittests  
+          flags: unittests

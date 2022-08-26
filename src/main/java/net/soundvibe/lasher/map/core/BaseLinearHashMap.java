@@ -1,8 +1,11 @@
 package net.soundvibe.lasher.map.core;
 
+import io.micrometer.core.instrument.*;
+import net.soundvibe.lasher.map.sync.*;
 import net.soundvibe.lasher.mmap.*;
 
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -10,236 +13,228 @@ import static net.soundvibe.lasher.util.FileSupport.deleteDirectory;
 
 public abstract class BaseLinearHashMap implements AutoCloseable {
 
-    static final int STRIPES = (int) Math.pow(2,8);
-    static final double LOAD_FACTOR = 0.75;
+	private static final long HEADER_SIZE = 28L;
+	static final int STRIPES = (int) Math.pow(2, 8);
+	static final double LOAD_FACTOR = 0.75;
 
-    private final long defaultFileLength /*1L << 28*/;
+	private final long defaultFileLength /*1L << 28*/;
 
-    final IndexNode index;
-    final DataNode data;
-    final Path baseDir;
+	final IndexNode index;
+	final DataNode data;
+	final Path baseDir;
+	final LinerHashMapMetrics metrics;
+	final Locker dataLock;
 
-    final AtomicLong dataWritePos = new AtomicLong(0L);
+	long tableLength;
 
-    final ReentrantReadWriteLock dataLock = new ReentrantReadWriteLock();
+	final AtomicLong dataWritePos = new AtomicLong(0L);
+	final AtomicLong size = new AtomicLong(0L);
+	final AtomicInteger rehashIndex = new AtomicInteger(0);
 
-    final Lock[] locks = new Lock[STRIPES];
+	protected BaseLinearHashMap(Path baseDir, long indexFileLength, long dataFileLength) {
+		this(baseDir, indexFileLength, dataFileLength, true, Tags.empty());
+	}
 
-    final AtomicLong size = new AtomicLong(0L);
+	protected BaseLinearHashMap(Path baseDir, long indexFileLength, long dataFileLength, boolean locker, Tags tags) {
+		this.baseDir = baseDir;
+		this.defaultFileLength = nextPowerOf2(dataFileLength);
+		this.dataLock = locker ? new RWLocker(new ReentrantReadWriteLock()) : new NoOpLocker();
+		baseDir.toFile().mkdirs();
+		this.index = new IndexNode(baseDir, nextPowerOf2(indexFileLength));
+		this.data = new DataNode(baseDir, this.defaultFileLength);
+		readHeader();
+		Metrics.gauge("index-size-bytes", tags, this.index, MemoryMapped::size);
+		Metrics.gauge("data-size-bytes", tags, this.data, MemoryMapped::size);
+		this.metrics = new LinerHashMapMetrics(
+				Metrics.timer("rehash-duration", tags),
+				Metrics.gauge("rehashing", tags, new AtomicLong(0L)),
+				Metrics.counter("rehash-count", tags));
+	}
 
-    long tableLength;
+	record LinerHashMapMetrics(Timer rehashDuration, AtomicLong rehashInProgress, Counter rehashCounter) {}
 
-    private static final long HEADER_SIZE = 28L;
+	protected abstract void readHeader();
 
-    final AtomicInteger rehashIndex = new AtomicInteger(0);
+	public abstract byte[] get(byte[] key);
 
-    private static final class Lock {}
+	protected long getHeaderSize() {
+		return HEADER_SIZE;
+	}
 
-    public BaseLinearHashMap(Path baseDir, long indexFileLength, long dataFileLength) {
-        this.baseDir = baseDir;
-        this.defaultFileLength = nextPowerOf2(dataFileLength);
-        for (int i = 0; i < STRIPES; i++) locks[i] = new Lock();
-        baseDir.toFile().mkdirs();
-        index = new IndexNode(baseDir, nextPowerOf2(indexFileLength));
-        data = new DataNode(baseDir, this.defaultFileLength);
-        readHeader();
-    }
+	protected void writeHeader() {
+		dataLock.writeLock();
+		try {
+			data.putLong(0L, size());
+			data.putLong(8L, tableLength);
+			data.putLong(16L, dataWritePos.get());
+			data.putInt(24L, rehashIndex.get());
+		} finally {
+			dataLock.writeUnlock();
+		}
+	}
 
-    protected abstract void readHeader();
+	public long nextPowerOf2(long i) {
+		if (i < defaultFileLength) return (defaultFileLength);
+		if ((i & (i - 1)) == 0) return i;
+		return (1L << (64 - (Long.numberOfLeadingZeros(i))));
+	}
 
-    public abstract byte[] get(byte[] key);
+	/**
+	 * Returns the bucket index for the given hash.
+	 * This doesn't lock - because it depends on tableLength, callers should
+	 * establish some lock that precludes a full rehash (read or write lock on
+	 * any of the locks).
+	 */
+	protected long idxForHash(long hash) {
+		return (hash & (STRIPES - 1L)) < rehashIndex.get()
+				? hash & (tableLength + tableLength - 1L)
+				: hash & (tableLength - 1L);
+	}
 
-    protected long getHeaderSize() {
-        return HEADER_SIZE;
-    }
+	/**
+	 * Perform incremental rehashing to keep the load under the threshold.
+	 */
+	protected void rehash() {
+		boolean wasRehashed = false;
+		long rehashStarted = 0L;
+		while (load() > LOAD_FACTOR) {
+			if (!wasRehashed) {
+				metrics.rehashInProgress.set(1L);
+				rehashStarted = System.currentTimeMillis();
+			}
 
-    protected void writeHeader() {
-        dataLock.writeLock().lock();
-        try {
-            data.putLong(0L, size());
-            data.putLong(8L, tableLength);
-            data.putLong(16L, dataWritePos.get());
-            data.putInt(24L, rehashIndex.get());
-        } finally {
-            dataLock.writeLock().unlock();
-        }
-    }
+			wasRehashed = true;
+			int stripeToRehash = 0;
+			dataLock.writeLock();
+			try {
+				stripeToRehash = rehashIndex.getAndIncrement();
+				if (stripeToRehash == 0) {
+					index.doubleGrowNoLock();
+				} else if (stripeToRehash == STRIPES) {
+					rehashIndex.set(0);
+					tableLength *= 2;
+					break;
+				}
+			} finally {
+				dataLock.writeUnlock();
+			}
 
-    public long nextPowerOf2(long i) {
-        if (i < defaultFileLength) return (defaultFileLength);
-        if ((i & (i - 1)) == 0) return i;
-        return (1 << (64 - (Long.numberOfLeadingZeros(i))));
-    }
+			dataLock.readLock();
+			long currentLength = 0L;
+			try {
+				currentLength = tableLength;
+			} finally {
+				dataLock.readUnlock();
+			}
 
-    /**
-     * Returns the lock for the stripe for the given hash.  Synchronize of this
-     * object before mutating the map.
-     */
-    protected Object lockForHash(long hash) {
-        return locks[(int) (hash & (STRIPES - 1L))];
-    }
+			for (long idx = stripeToRehash; idx < currentLength; idx += STRIPES) {
+				rehashIdx(idx, currentLength);
+			}
 
-    /**
-     * Returns the bucket index for the given hash.
-     * This doesn't lock - because it depends on tableLength, callers should
-     * establish some lock that precludes a full rehash (read or write lock on
-     * any of the locks).
-     */
-    protected long idxForHash(long hash) {
-        return (hash & (STRIPES - 1L)) < rehashIndex.get()
-                ? hash & (tableLength + tableLength - 1L)
-                : hash & (tableLength - 1L);
-    }
+		}
+		if (wasRehashed) {
+			metrics.rehashInProgress.set(0L);
+			metrics.rehashCounter.increment();
+			metrics.rehashDuration.record(System.currentTimeMillis() - rehashStarted, TimeUnit.MILLISECONDS);
+		}
+	}
 
-    /**
-     * Recursively locks all stripes, and doubles the size of the primary mapper.
-     * On Linux your filesystem probably makes this expansion a sparse operation.
-     */
-    protected void completeExpansion(int idx) {
-        if (idx == STRIPES) {
-            rehashIndex.set(0);
-            tableLength *= 2;
-        } else {
-            synchronized (locks[idx]) {
-                completeExpansion(idx + 1);
-            }
-        }
-    }
+	/**
+	 * Allocates the given amount of space in secondary storage, and returns a
+	 * pointer to it.  Expands secondary storage if necessary.
+	 */
+	protected long allocateData(long size) {
+		dataLock.readLock();
+		try {
+			while (true) {
+				final long out = dataWritePos.get();
+				final long newDataPos = out + size;
+				if (newDataPos >= data.size()) {
+					//Goes to reallocation section
+					break;
+				} else {
+					if (dataWritePos.compareAndSet(out, newDataPos)) {
+						return out;
+					}
+				}
+			}
+		} finally {
+			dataLock.readUnlock();
+		}
 
-    /**
-     * Perform incremental rehashing to keep the load under the threshold.
-     */
-    protected void rehash() {
-        while (load() > LOAD_FACTOR) {
-            //If we've completed all rehashing, we need to expand the table & reset
-            //the counters.
-            if (rehashIndex.compareAndSet(STRIPES, STRIPES + 1)) {
-                completeExpansion(0);
-                return;
-            }
+		dataLock.writeLock();
+		try {
+			if (dataWritePos.get() + size >= data.size()) {
+				data.doubleGrow();
+			}
+		} finally {
+			dataLock.writeUnlock();
+		}
+		return allocateData(size);
+	}
 
-            //Otherwise, we attempt to grab the next index to process
-            int stripeToRehash;
-            while (true) {
-                stripeToRehash = rehashIndex.getAndIncrement();
-                //If it's in the valid table range, we conceptually acquired a valid ticket
-                if (stripeToRehash < STRIPES) break;
-                //Otherwise we're in the middle of a reset - spin until it has completed.
-                while (rehashIndex.get() >= STRIPES) {
-                    Thread.yield();
-                    if (load() < LOAD_FACTOR) return;
-                }
-            }
-            //We now have a valid ticket - we rehash all the indexes in the given stripe
-            synchronized (locks[stripeToRehash]) {
-                if (stripeToRehash == 0) {
-                    index.doubleGrow();
-                }
-                for (long idx = stripeToRehash; idx < tableLength; idx += STRIPES) {
-                    rehashIdx(idx);
-                }
-            }
-        }
-    }
+	/**
+	 * Because all records in a bucket hash to their position or position + tableLength,
+	 * we can incrementally rehash one bucket at a time.
+	 * This does not need to acquire a lock; the calling rehash() method handles it.
+	 */
+	protected abstract void rehashIdx(long idx, long tableLength);
 
-    /**
-     * Allocates the given amount of space in secondary storage, and returns a
-     * pointer to it.  Expands secondary storage if necessary.
-     */
-    protected long allocateData(long size) {
-        dataLock.readLock().lock();
-        try {
-            while (true) {
-                final long out = dataWritePos.get();
-                final long newDataPos = out + size;
-                if (newDataPos >= data.size()) {
-                    //Goes to reallocation section
-                    break;
-                } else {
-                    if (dataWritePos.compareAndSet(out, newDataPos)) {
-                        return out;
-                    }
-                }
-            }
-        } finally {
-            dataLock.readLock().unlock();
-        }
+	/**
+	 * Removes all entries from the map, zeroing the primary file and marking
+	 * the current position in the secondary as immediately after the header.
+	 * Data is not actually removed from the secondary, but it will be
+	 * overwritten on subsequent writes.
+	 */
+	public void clear() {
+		dataLock.writeLock();
+		try {
+			this.index.clear();
+			this.dataWritePos.set(getHeaderSize());
+			this.size.set(0);
+			this.rehashIndex.set(0);
+		} finally {
+			dataLock.writeUnlock();
+		}
+	}
 
-        dataLock.writeLock().lock();
-        try {
-            if (dataWritePos.get() + size >= data.size()) {
-                data.doubleGrow();
-            }
-        } finally {
-            dataLock.writeLock().unlock();
-        }
-        return allocateData(size);
-    }
+	/**
+	 * Writes all header metadata and unmaps the backing mmap'd files.
+	 */
+	@Override
+	public void close() {
+		writeHeader();
+		index.close();
+		data.close();
+	}
 
-    /**
-     * Because all records in a bucket hash to their position or position + tableLength,
-     * we can incrementally rehash one bucket at a time.
-     * This does not need to acquire a lock; the calling rehash() method handles it.
-     */
-    protected abstract void rehashIdx(long idx);
+	public void delete() {
+		close();
+		deleteDirectory(baseDir);
+	}
 
-    private void clear(int i) {
-        if (i == STRIPES) {
-            this.dataLock.writeLock().lock();
-            try {
-                this.index.clear();
-                this.dataWritePos.set(getHeaderSize());
-                this.size.set(0);
-                this.rehashIndex.set(0);
-            } finally {
-                this.dataLock.writeLock().unlock();
-            }
-        } else {
-            synchronized (locks[i]) {
-                clear(i + 1);
-            }
-        }
-    }
+	public long size() {
+		return size.get();
+	}
 
-    /**
-     * Removes all entries from the map, zeroing the primary file and marking
-     * the current position in the secondary as immediately after the header.
-     * Data is not actually removed from the secondary, but it will be
-     * overwritten on subsequent writes.
-     */
-    public void clear() {
-        clear(0);
-    }
+	/**
+	 * "Fullness" of the table.  Some implementations may wish to override this
+	 * to account for multiple records per bucket.
+	 */
+	public double load() {
+		return load(rehashIndex.get());
+	}
 
-    /**
-     * Writes all header metadata and unmaps the backing mmap'd files.
-     */
-    @Override
-    public void close() {
-        writeHeader();
-        index.close();
-        data.close();
-    }
+	public double load(int rehashIndex) {
+		dataLock.readLock();
+		try {
+			return size.doubleValue() / (tableLength + ((double) tableLength / (STRIPES)) * rehashIndex);
+		} finally {
+			dataLock.readUnlock();
+		}
+	}
 
-    public void delete() {
-        close();
-        deleteDirectory(baseDir);
-    }
-
-    public long size() {
-        return size.get();
-    }
-
-    /**
-     * "Fullness" of the table.  Some implementations may wish to override this
-     * to account for multiple records per bucket.
-     */
-    public double load() {
-        return size.doubleValue() / (tableLength + ((double) tableLength / (STRIPES)) * rehashIndex.get());
-    }
-
-    public boolean containsKey(byte[] k) {
-        return get(k) != null;
-    }
-
+	public boolean containsKey(byte[] k) {
+		return get(k) != null;
+	}
 }

@@ -21,11 +21,7 @@ public final class RecordNode {
         return this.nextRecordPos;
     }
 
-    public void setNextRecordPos(long nRecPos) {
-        this.nextRecordPos = nRecPos;
-    }
-
-    public void setNextRecordPos(long nRecPos, DataNode dataNode) {
+    public void writeAndSetNextRecordPos(long nRecPos, DataNode dataNode) {
         dataNode.writeNextRecordPos(pos, nRecPos);
         this.nextRecordPos = nRecPos;
     }
