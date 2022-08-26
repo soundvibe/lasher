@@ -2,8 +2,12 @@ package net.soundvibe.lasher.map.sync;
 
 public interface Locker {
 
-    Lock readLock();
+    void readLock();
 
-    Lock writeLock();
+    void readUnlock();
+
+    void writeLock();
+
+    void writeUnlock();
 
 }

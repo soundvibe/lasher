@@ -100,8 +100,7 @@ class LasherPerformanceTest {
 					var bytes = new byte[Math.max(16, rnd.nextInt(256))];
 					rnd.nextBytes(bytes);
 					return new AbstractMap.SimpleEntry<>(BytesSupport.toBytes(k), bytes);
-				})
-				.collect(Collectors.toList());
+				}).toList();
 
 		System.gc();
 		var usedBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
@@ -156,8 +155,7 @@ class LasherPerformanceTest {
 					var bytes = new byte[Math.max(16, rnd.nextInt(256))];
 					rnd.nextBytes(bytes);
 					return new AbstractMap.SimpleEntry<>(BytesSupport.toBytes(k), bytes);
-				})
-				.collect(Collectors.toList());
+				}).toList();
 
 		System.gc();
 		var usedBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
@@ -211,8 +209,7 @@ class LasherPerformanceTest {
 					var bytes = new byte[Math.max(16, rnd.nextInt(256))];
 					rnd.nextBytes(bytes);
 					return new AbstractMap.SimpleEntry<>(BytesSupport.toBytes(k), bytes);
-				})
-				.collect(Collectors.toList());
+				}).toList();
 		System.gc();
 		var usedBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
 
@@ -271,8 +268,7 @@ class LasherPerformanceTest {
 					var bytes = new byte[Math.max(16, rnd.nextInt(256))];
 					rnd.nextBytes(bytes);
 					return new AbstractMap.SimpleEntry<>(BytesSupport.toBytes(k), bytes);
-				})
-				.collect(Collectors.toList());
+				}).toList();
 		System.gc();
 		var usedBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
 

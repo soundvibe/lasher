@@ -62,11 +62,14 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 	}
 
 	protected void writeHeader() {
-		try (var ignored = dataLock.writeLock()) {
+		dataLock.writeLock();
+		try {
 			data.putLong(0L, size());
 			data.putLong(8L, tableLength);
 			data.putLong(16L, dataWritePos.get());
 			data.putInt(24L, rehashIndex.get());
+		} finally {
+			dataLock.writeUnlock();
 		}
 	}
 
@@ -102,7 +105,8 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 
 			wasRehashed = true;
 			int stripeToRehash = 0;
-			try (var ignored = dataLock.writeLock()) {
+			dataLock.writeLock();
+			try {
 				stripeToRehash = rehashIndex.getAndIncrement();
 				if (stripeToRehash == 0) {
 					index.doubleGrowNoLock();
@@ -111,11 +115,17 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 					tableLength *= 2;
 					break;
 				}
+			} finally {
+				dataLock.writeUnlock();
 			}
 
-			var lock = dataLock.readLock();
-			var currentLength = tableLength;
-			lock.unlock();
+			dataLock.readLock();
+			long currentLength = 0L;
+			try {
+				currentLength = tableLength;
+			} finally {
+				dataLock.readUnlock();
+			}
 
 			for (long idx = stripeToRehash; idx < currentLength; idx += STRIPES) {
 				rehashIdx(idx, currentLength);
@@ -134,7 +144,8 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 	 * pointer to it.  Expands secondary storage if necessary.
 	 */
 	protected long allocateData(long size) {
-		try (var ignored = dataLock.readLock()) {
+		dataLock.readLock();
+		try {
 			while (true) {
 				final long out = dataWritePos.get();
 				final long newDataPos = out + size;
@@ -147,12 +158,17 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 					}
 				}
 			}
+		} finally {
+			dataLock.readUnlock();
 		}
 
-		try (var ignored = dataLock.writeLock()) {
+		dataLock.writeLock();
+		try {
 			if (dataWritePos.get() + size >= data.size()) {
 				data.doubleGrow();
 			}
+		} finally {
+			dataLock.writeUnlock();
 		}
 		return allocateData(size);
 	}
@@ -171,11 +187,14 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 	 * overwritten on subsequent writes.
 	 */
 	public void clear() {
-		try (var ignored = dataLock.writeLock()) {
+		dataLock.writeLock();
+		try {
 			this.index.clear();
 			this.dataWritePos.set(getHeaderSize());
 			this.size.set(0);
 			this.rehashIndex.set(0);
+		} finally {
+			dataLock.writeUnlock();
 		}
 	}
 
@@ -207,8 +226,11 @@ public abstract class BaseLinearHashMap implements AutoCloseable {
 	}
 
 	public double load(int rehashIndex) {
-		try (var ignored = dataLock.readLock()) {
+		dataLock.readLock();
+		try {
 			return size.doubleValue() / (tableLength + ((double) tableLength / (STRIPES)) * rehashIndex);
+		} finally {
+			dataLock.readUnlock();
 		}
 	}
 

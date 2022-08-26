@@ -31,47 +31,68 @@ public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], by
 
     public byte[] get(byte[] key, long hash) {
     	return metrics.getLatency.record(() -> {
-    		try (var ignored = rwLock.readLock()) {
+            rwLock.readLock();
+    		try {
 				return lasher.get(key, hash);
-			}
+			} finally {
+                rwLock.readUnlock();
+            }
 		});
     }
 
     public byte[] put(byte[] key, long hash, byte[] value) {
     	return metrics.putLatency.record(() -> {
-			try (var ignored = rwLock.writeLock()) {
+            rwLock.writeLock();
+			try {
 				return lasher.put(key, value, hash);
-			}
+			} finally {
+                rwLock.writeUnlock();
+            }
 		});
     }
 
     public byte[] putIfAbsent(byte[] key, long hash, byte[] value) {
-        try (var ignored = rwLock.writeLock()) {
+        rwLock.writeLock();
+        try {
             return lasher.putIfAbsent(key, value, hash);
+        } finally {
+            rwLock.writeUnlock();
         }
     }
 
     public byte[] remove(byte[] key, long hash) {
-        try (var ignored = rwLock.writeLock()) {
+        rwLock.writeLock();
+        try {
             return lasher.remove(key, hash);
+        } finally {
+            rwLock.writeUnlock();
         }
     }
 
     public boolean remove(byte[] key, long hash, byte[] value) {
-        try (var ignored = rwLock.writeLock()) {
+        rwLock.writeLock();
+        try {
             return lasher.remove(key, value, hash);
+        } finally {
+            rwLock.writeUnlock();
         }
     }
 
     public boolean replace(byte[] key, long hash, byte[] prevVal, byte[] newVal) {
-        try (var ignored = rwLock.writeLock()) {
+        rwLock.writeLock();
+        try {
             return lasher.replace(key, hash, prevVal, newVal);
+        } finally {
+            rwLock.writeUnlock();
         }
     }
 
     public byte[] replace(byte[] key, long hash, byte[] value) {
-        try (var ignored = rwLock.writeLock()) {
+        rwLock.writeLock();
+        try {
             return lasher.replace(key, value, hash);
+        } finally {
+            rwLock.writeUnlock();
         }
     }
 
@@ -85,21 +106,30 @@ public final class Shard implements AutoCloseable, Iterable<Map.Entry<byte[], by
     }
 
     public void clear() {
-        try (var ignored = rwLock.writeLock()) {
+        rwLock.writeLock();
+        try {
             lasher.clear();
+        } finally {
+            rwLock.writeUnlock();
         }
     }
 
 	public void delete() {
-		try (var ignored = rwLock.writeLock()) {
+        rwLock.writeLock();
+		try {
 			lasher.delete();
-		}
+		} finally {
+            rwLock.writeUnlock();
+        }
 	}
 
 	@Override
     public void close() {
-        try (var ignored = rwLock.writeLock()) {
+        rwLock.writeLock();
+        try {
             lasher.close();
+        } finally {
+            rwLock.writeUnlock();
         }
     }
 

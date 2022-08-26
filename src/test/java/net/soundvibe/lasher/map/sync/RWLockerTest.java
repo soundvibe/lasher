@@ -12,10 +12,10 @@ class RWLockerTest {
 	@Test
 	void should_read_lock() {
 		var sut = new RWLocker(new ReentrantReadWriteLock());
-		var readLock = sut.readLock();
-		var readLock2 = sut.readLock();
-		readLock.unlock();
-		readLock2.unlock();
+		sut.readLock();
+		sut.readLock();
+		sut.readUnlock();
+		sut.readUnlock();
 
 		assertTrue(true);
 	}

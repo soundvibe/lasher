@@ -252,7 +252,8 @@ public class Lasher extends BaseLinearHashMap {
 
 	@Override
 	protected void readHeader() {
-		try (var ignored = dataLock.readLock()) {
+		dataLock.readLock();
+		try {
 			final long size = data.getLong(0L);
 			final long bucketsInMap = data.getLong(8L);
 			final long lastSecondaryPos = data.getLong(16L);
@@ -261,6 +262,8 @@ public class Lasher extends BaseLinearHashMap {
 			this.tableLength = bucketsInMap == 0L ? (index.size() / INDEX_REC_SIZE) : bucketsInMap;
 			this.dataWritePos.set(lastSecondaryPos == 0L ? getHeaderSize() : lastSecondaryPos);
 			this.rehashIndex.set(rehashComplete);
+		} finally {
+			dataLock.readUnlock();
 		}
 	}
 
@@ -306,8 +309,11 @@ public class Lasher extends BaseLinearHashMap {
 	}
 
 	protected RecordNode readDataRecord(long pos) {
-		try (var ignored = dataLock.readLock()) {
+		dataLock.readLock();
+		try {
 			return data.readRecord(pos);
+		} finally {
+			dataLock.readUnlock();
 		}
 	}
 
@@ -390,7 +396,8 @@ public class Lasher extends BaseLinearHashMap {
 		public LashIterator(Locker locker) {
 			this.locker = locker;
 			this.length = rehashIndex.get() == 0L ? tableLength : tableLength * 2L;
-			try (var ignored = locker.readLock()) {
+			locker.readLock();
+			try {
 				for (nextIdx = 0L; nextIdx < length; nextIdx++) {
 					nextAddr = index.getDataAddress(idxToPos(nextIdx));
 					if (nextAddr != 0L) {
@@ -398,6 +405,8 @@ public class Lasher extends BaseLinearHashMap {
 						break;
 					}
 				}
+			} finally {
+				locker.readUnlock();
 			}
 		}
 
@@ -422,8 +431,11 @@ public class Lasher extends BaseLinearHashMap {
 			}
 			for (nextIdx = nextIdx + 1L; nextIdx < length; nextIdx++) {
 				final long pos = idxToPos(nextIdx);
-				try (var ignored = locker.readLock()) {
+				locker.readLock();
+				try {
 					nextAddr = index.getDataAddress(pos);
+				} finally {
+					locker.readUnlock();
 				}
 				if (nextAddr != 0L) {
 					finished = false;

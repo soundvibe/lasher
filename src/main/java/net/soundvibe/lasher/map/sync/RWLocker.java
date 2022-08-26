@@ -5,14 +5,22 @@ import java.util.concurrent.locks.*;
 public record RWLocker(ReadWriteLock rwLock) implements Locker {
 
 	@Override
-    public Lock readLock() {
+    public void readLock() {
         rwLock.readLock().lock();
-        return () -> rwLock.readLock().unlock();
     }
 
     @Override
-    public Lock writeLock() {
+    public void readUnlock() {
+        rwLock.readLock().unlock();
+    }
+
+    @Override
+    public void writeLock() {
         rwLock.writeLock().lock();
-        return () -> rwLock.writeLock().unlock();
+    }
+
+    @Override
+    public void writeUnlock() {
+        rwLock.writeLock().unlock();
     }
 }
