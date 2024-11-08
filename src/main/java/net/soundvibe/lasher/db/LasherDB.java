@@ -1,15 +1,18 @@
 package net.soundvibe.lasher.db;
 
-import io.micrometer.core.instrument.*;
-import net.soundvibe.lasher.map.core.*;
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.Tag;
+import io.micrometer.core.instrument.Tags;
+import net.soundvibe.lasher.map.core.Lasher;
+import net.soundvibe.lasher.map.core.Shard;
 import net.soundvibe.lasher.util.Hash;
 
 import java.nio.file.Path;
 import java.util.*;
-import java.util.stream.*;
+import java.util.stream.IntStream;
+import java.util.stream.StreamSupport;
 
 import static java.util.Objects.requireNonNull;
-import static java.util.stream.Collectors.toList;
 import static net.soundvibe.lasher.util.Constants.*;
 
 public final class LasherDB implements AutoCloseable {
@@ -30,7 +33,7 @@ public final class LasherDB implements AutoCloseable {
 		var tags = Tags.of(Tag.of("lasherId", id.toString()));
 		this.shards = IntStream.range(0, shards)
 				.mapToObj(i -> new Shard(i, baseDir.resolve("shard_" + i), indexFileLength, dataFileLength, tags))
-				.collect(toList());
+				.toList();
 		Metrics.gauge("shards", tags, shards);
 	}
 

@@ -1,17 +1,23 @@
 package net.soundvibe.lasher.mmap;
 
-import net.soundvibe.lasher.map.model.*;
-import sun.misc.Unsafe;
+import jdk.internal.access.JavaNioAccess;
+import jdk.internal.misc.Unsafe;
+import net.soundvibe.lasher.map.model.FileType;
 
-import java.io.*;
-import java.lang.reflect.*;
-import java.nio.*;
+import java.io.Closeable;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.io.UncheckedIOException;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.*;
-import java.util.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import static jdk.internal.access.SharedSecrets.getJavaNioAccess;
 import static net.soundvibe.lasher.util.BytesSupport.BYTE_ORDER;
 
 public abstract class MemoryMapped implements Closeable {
@@ -26,9 +32,8 @@ public abstract class MemoryMapped implements Closeable {
     private final Path baseDir;
     protected final ReadWriteLock rwLock;
 
-    private static final Class<?> UNSAFE_CLASS = resolveUnsafeClass();
-    private static final Unsafe UNSAFE = resolveUnsafe();
-    private static final Field ADDRESS_FIELD = resolveAddressField();
+    static final Unsafe UNSAFE = Unsafe.getUnsafe();
+    static final JavaNioAccess JAVA_NIO_ACCESS = getJavaNioAccess();
 
     protected MemoryMapped(final Path baseDir, FileType fileType, long defaultLength) {
         Objects.requireNonNull(baseDir, "baseDir is null");
@@ -68,8 +73,7 @@ public abstract class MemoryMapped implements Closeable {
                 var totalBuffers =  new MappedBuffer[totalBuffersSize];
                 int index = 0;
                 for (long i = 0; i < fileSize; i+= chunkSize) {
-                    totalBuffers[index] = new MappedBuffer(
-                            fc.map(FileChannel.MapMode.READ_WRITE, i, chunkSize), UNSAFE, ADDRESS_FIELD);
+                    totalBuffers[index] = new MappedBuffer(fc.map(FileChannel.MapMode.READ_WRITE, i, chunkSize));
                     index++;
                 }
                 return new FileStats(fileSize, totalBuffers);
@@ -117,39 +121,6 @@ public abstract class MemoryMapped implements Closeable {
             if (buffer != null) {
                 buffer.clear();
             }
-        }
-    }
-
-    private static Class<?> resolveUnsafeClass() {
-        try {
-            return Class.forName("sun.misc.Unsafe");
-        } catch (Exception ex) {
-            try {
-                return Class.forName("jdk.internal.misc.Unsafe");
-            } catch (ClassNotFoundException e) {
-                return null;
-            }
-        }
-    }
-
-    private static Unsafe resolveUnsafe() {
-        if (UNSAFE_CLASS == null) throw new UnsupportedOperationException("Unsafe not supported on this platform");
-        try {
-            var theUnsafeField = UNSAFE_CLASS.getDeclaredField("theUnsafe");
-            theUnsafeField.setAccessible(true);
-            return (Unsafe) theUnsafeField.get(null);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new UnsafeAccess(e);
-        }
-    }
-
-    private static Field resolveAddressField() {
-        try {
-            var field = Buffer.class.getDeclaredField("address");
-            field.setAccessible(true);
-            return field;
-        } catch (Exception e) {
-            throw new UnsafeAccess(e);
         }
     }
 
@@ -221,7 +192,7 @@ public abstract class MemoryMapped implements Closeable {
                     if (buffer != null) {
                         buffer.close();
                     }
-                    buffers[i] = new MappedBuffer(mapBuffer(fc, i, chunkSize), UNSAFE, ADDRESS_FIELD);
+                    buffers[i] = new MappedBuffer(mapBuffer(fc, i, chunkSize));
                 }
             } catch (IOException e) {
                 throw new UncheckedIOException(e);

@@ -1,26 +1,21 @@
 package net.soundvibe.lasher.mmap;
 
-import net.soundvibe.lasher.map.model.UnsafeAccess;
 import net.soundvibe.lasher.util.BytesSupport;
-import sun.misc.Unsafe;
 
-import java.lang.reflect.Field;
 import java.nio.MappedByteBuffer;
 
 import static java.util.Objects.requireNonNull;
+import static net.soundvibe.lasher.mmap.MemoryMapped.JAVA_NIO_ACCESS;
+import static net.soundvibe.lasher.mmap.MemoryMapped.UNSAFE;
 
 public final class MappedBuffer implements AutoCloseable {
 
     private final MappedByteBuffer buffer;
-    private final Unsafe unsafe;
-    private final Field addressField;
 
-    public MappedBuffer(MappedByteBuffer buffer, Unsafe unsafe, Field addressField) {
+    public MappedBuffer(MappedByteBuffer buffer) {
         requireNonNull(buffer, "buffer cannot be null");
         this.buffer = buffer;
         this.buffer.order(BytesSupport.BYTE_ORDER);
-        this.unsafe = unsafe;
-        this.addressField = addressField;
     }
 
     public int capacity() {
@@ -58,15 +53,11 @@ public final class MappedBuffer implements AutoCloseable {
     @Override
     public void close() {
         if (buffer == null || !buffer.isDirect()) return;
-		unsafe.invokeCleaner(buffer);
+		UNSAFE.invokeCleaner(buffer);
     }
 
     public void clear() {
-        try {
-            var address = addressField.getLong(buffer);
-            unsafe.setMemory(address, buffer.capacity(), (byte) 0);
-        } catch (IllegalAccessException e) {
-            throw new UnsafeAccess(e);
-        }
+        var address = JAVA_NIO_ACCESS.getBufferAddress(buffer);
+        UNSAFE.setMemory(address, buffer.capacity(), (byte) 0);
     }
 }

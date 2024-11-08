@@ -7,7 +7,7 @@ public final class BytesSupport {
 
 	private BytesSupport() {}
 
-	public static final ByteOrder BYTE_ORDER = ByteOrder.nativeOrder();
+	public static final ByteOrder BYTE_ORDER = ByteOrder.LITTLE_ENDIAN;
 
 	private static final VarHandle LONG_HANDLE = MethodHandles.byteArrayViewVarHandle(long[].class, BYTE_ORDER);
 	private static final VarHandle INT_HANDLE = MethodHandles.byteArrayViewVarHandle(int[].class, BYTE_ORDER);
@@ -32,33 +32,43 @@ public final class BytesSupport {
 		return (int)INT_HANDLE.get(b, fromBytes);
 	}
 
-	public static byte[] longToBytes(long i) {
-		var buf = ByteBuffer.allocate(Long.BYTES);
-		buf.order(BYTE_ORDER);
-		buf.putLong(i);
-		return buf.array();
+	public static byte[] longToBytes(long a) {
+		return new byte[] {
+				(byte) a,
+				(byte) (a >> 8),
+				(byte) (a >> 16),
+				(byte) (a >> 24),
+				(byte) (a >> 32),
+				(byte) (a >> 40),
+				(byte) (a >> 48),
+				(byte) (a >> 56)};
 	}
 
 	public static long bytesToLong(byte[] b) {
-		if (b == null)
-			return -1;
-		var buf = ByteBuffer.wrap(b);
-		buf.order(BYTE_ORDER);
-		return buf.getLong();
+		return  ((long) b[7] << 56)
+				| ((long) b[6] & 0xff) << 48
+				| ((long) b[5] & 0xff) << 40
+				| ((long) b[4] & 0xff) << 32
+				| ((long) b[3] & 0xff) << 24
+				| ((long) b[2] & 0xff) << 16
+				| ((long) b[1] & 0xff) << 8
+				| ((long) b[0] & 0xff);
+
 	}
 
-	public static byte[] intToBytes(int i) {
-		var buf = ByteBuffer.allocate(Integer.BYTES);
-		buf.order(BYTE_ORDER);
-		buf.putInt(i);
-		return buf.array();
+	public static byte[] intToBytes(int a) {
+		return new byte[] {
+				(byte) (a & 0xFF),
+				(byte) ((a >> 8) & 0xFF),
+				(byte) ((a >> 16) & 0xFF),
+				(byte) ((a >> 24) & 0xFF),
+		};
 	}
 
 	public static int bytesToInt(byte[] b) {
-		if (b == null)
-			return -1;
-		var buf = ByteBuffer.wrap(b);
-		buf.order(BYTE_ORDER);
-		return buf.getInt();
+		return   b[0] & 0xFF |
+				(b[1] & 0xFF) << 8 |
+				(b[2] & 0xFF) << 16 |
+				(b[3] & 0xFF) << 24;
 	}
 }
